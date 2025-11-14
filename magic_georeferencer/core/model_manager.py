@@ -44,7 +44,7 @@ class ModelManager:
 
         # Load settings
         config_path = Path(__file__).parent.parent / 'config' / 'default_settings.json'
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding='utf-8') as f:
             self.settings = json.load(f)
 
         self.device = None
