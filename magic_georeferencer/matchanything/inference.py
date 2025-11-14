@@ -120,42 +120,62 @@ class MatchAnythingInference:
             # Call the model with the image pair
             outputs = self.model(**inputs)
 
-            # EfficientLoFTR returns BackboneOutput with feature_maps
-            # We need to extract keypoints from these features
-            # The model should have a matching method or we extract from output
+            # Debug: Print what attributes the output actually has
+            print(f"Output type: {type(outputs)}")
+            print(f"Output attributes: {dir(outputs)}")
 
-            # Try to get keypoints from the model output
-            if hasattr(outputs, 'keypoints0') and hasattr(outputs, 'keypoints1'):
-                # Direct keypoint output
+            # Try different ways to extract keypoints based on model output structure
+            keypoints1 = None
+            keypoints2 = None
+            confidence = None
+
+            # Method 1: Check for keypoints attribute (KeypointMatchingOutput)
+            if hasattr(outputs, 'keypoints'):
+                keypoints_data = outputs.keypoints
+                if isinstance(keypoints_data, (list, tuple)) and len(keypoints_data) == 2:
+                    keypoints1 = keypoints_data[0].cpu().numpy()
+                    keypoints2 = keypoints_data[1].cpu().numpy()
+                    print(f"✓ Extracted keypoints from outputs.keypoints: {len(keypoints1)} matches")
+
+            # Method 2: Check for separate keypoints0/keypoints1 attributes
+            if keypoints1 is None and hasattr(outputs, 'keypoints0') and hasattr(outputs, 'keypoints1'):
                 keypoints1 = outputs.keypoints0.cpu().numpy()
                 keypoints2 = outputs.keypoints1.cpu().numpy()
+                print(f"✓ Extracted keypoints from outputs.keypoints0/keypoints1: {len(keypoints1)} matches")
 
+            # Method 3: Check if output is a dict-like object
+            if keypoints1 is None and isinstance(outputs, dict):
+                if 'keypoints0' in outputs and 'keypoints1' in outputs:
+                    keypoints1 = outputs['keypoints0'].cpu().numpy()
+                    keypoints2 = outputs['keypoints1'].cpu().numpy()
+                    print(f"✓ Extracted keypoints from dict outputs: {len(keypoints1)} matches")
+
+            # Extract confidence scores
+            if keypoints1 is not None:
                 if hasattr(outputs, 'confidence'):
                     confidence = outputs.confidence.cpu().numpy()
+                    print(f"✓ Using model confidence scores")
                 elif hasattr(outputs, 'matching_scores'):
                     confidence = outputs.matching_scores.cpu().numpy()
+                    print(f"✓ Using matching scores as confidence")
+                elif hasattr(outputs, 'scores'):
+                    confidence = outputs.scores.cpu().numpy()
+                    print(f"✓ Using scores as confidence")
+                elif isinstance(outputs, dict) and 'confidence' in outputs:
+                    confidence = outputs['confidence'].cpu().numpy()
+                    print(f"✓ Using dict confidence scores")
                 else:
-                    confidence = np.ones(len(keypoints1))
+                    # Default to uniform confidence
+                    confidence = np.ones(len(keypoints1)) * 0.8
+                    print(f"⚠ No confidence scores found, using default 0.8")
 
-            elif hasattr(self.model, 'match'):
-                # Model has a separate match method
-                match_results = self.model.match(**inputs)
-                keypoints1 = match_results['keypoints0'].cpu().numpy()
-                keypoints2 = match_results['keypoints1'].cpu().numpy()
-                confidence = match_results.get('confidence', np.ones(len(keypoints1)))
-
-            else:
-                # Fallback: Extract from feature maps using traditional feature matching
-                # This is a workaround if direct keypoint extraction isn't available
-                print("WARNING: Using feature-based matching fallback")
-                feature_maps = outputs.feature_maps
-
-                # Extract dense features and match
-                keypoints1, keypoints2, confidence = self._match_from_features(
-                    feature_maps,
-                    image1,
-                    image2,
-                    max_keypoints
+            # If still no keypoints, fail gracefully
+            if keypoints1 is None:
+                raise RuntimeError(
+                    f"Could not extract keypoints from model output.\n"
+                    f"Output type: {type(outputs)}\n"
+                    f"Available attributes: {[attr for attr in dir(outputs) if not attr.startswith('_')]}\n"
+                    f"Please check the model output format."
                 )
 
             # Scale keypoints back to original image sizes if needed
