@@ -61,7 +61,7 @@ class GCPGenerator:
            a. Source coords: pixel coords in ungeoreferenced image
            b. Ref coords: pixel coords in basemap image
            c. Transform ref pixel coords to geographic coords using extent
-           d. Create GCP with source pixels ’ geographic coords
+           d. Create GCP with source pixels -> geographic coords
         """
         if not QGIS_AVAILABLE:
             raise RuntimeError("QGIS is not available")
