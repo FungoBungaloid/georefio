@@ -129,14 +129,31 @@ class MagicGeoreferencer:
 
     def run(self):
         """Run method that performs all the real work"""
-        # Lazy import to speed up plugin loading
-        from .ui.main_dialog import MagicGeoreferencerDialog
+        # Check dependencies before importing
+        from .dependency_installer import check_and_prompt_install
 
-        # Create the dialog if it doesn't exist
-        if self.dialog is None:
-            self.dialog = MagicGeoreferencerDialog(self.iface)
+        if not check_and_prompt_install(self.iface.mainWindow()):
+            # Dependencies not available or user cancelled
+            return
 
-        # Show the dialog
-        self.dialog.show()
-        # Run the dialog event loop
-        self.dialog.exec_()
+        try:
+            # Lazy import to speed up plugin loading
+            from .ui.main_dialog import MagicGeoreferencerDialog
+
+            # Create the dialog if it doesn't exist
+            if self.dialog is None:
+                self.dialog = MagicGeoreferencerDialog(self.iface)
+
+            # Show the dialog
+            self.dialog.show()
+            # Run the dialog event loop
+            self.dialog.exec_()
+
+        except ImportError as e:
+            # Show error if imports still fail after dependency check
+            QMessageBox.critical(
+                self.iface.mainWindow(),
+                "Magic Georeferencer - Import Error",
+                f"Failed to load plugin components:\n\n{str(e)}\n\n"
+                "Please restart QGIS after installing dependencies."
+            )

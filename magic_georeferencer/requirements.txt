@@ -1,0 +1,23 @@
+# Magic Georeferencer - Python Dependencies
+# These packages are required for the plugin to function
+
+# Deep Learning Framework
+torch>=2.0.0
+torchvision>=0.15.0
+
+# AI Model Integration
+transformers>=4.30.0
+huggingface-hub>=0.16.0
+
+# Scientific Computing
+scipy>=1.9.0
+numpy>=1.21.0
+
+# Image Processing
+opencv-python>=4.8.0
+pillow>=9.0.0
+
+# Installation:
+# The plugin will automatically prompt to install these packages when first run.
+# For manual installation, use:
+#   python -m pip install --user -r requirements.txt
