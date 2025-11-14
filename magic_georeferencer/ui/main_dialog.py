@@ -231,7 +231,7 @@ class MagicGeoreferencerDialog(QDialog):
 
         text = (
             "Magic Georeferencer uses an AI model to automatically match images.\n\n"
-            f"The model weights (~{self.settings['model']['weights_size_mb']} MB) "
+            f"The model weights (~{self.settings['model']['estimated_size_mb']} MB) "
             "need to be downloaded once.\n\n"
         )
 

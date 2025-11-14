@@ -232,8 +232,8 @@ class ModelManager:
         info = {
             'exists': self.weights_exist(),
             'directory': str(self.weights_dir),
-            'url': self.weights_url,
-            'expected_size_mb': self.settings['model']['weights_size_mb']
+            'repo': self.MODEL_REPO,
+            'expected_size_mb': self.settings['model']['estimated_size_mb']
         }
 
         if info['exists']:
