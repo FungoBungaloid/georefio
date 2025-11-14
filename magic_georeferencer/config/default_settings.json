@@ -36,7 +36,8 @@
     "show_confidence_viewer": true
   },
   "model": {
-    "weights_url": "https://huggingface.co/LittleFrog/MatchAnything/resolve/main/weights.zip",
-    "weights_size_mb": 800
+    "huggingface_repo": "zju-community/matchanything_eloftr",
+    "estimated_size_mb": 400,
+    "license": "Apache 2.0"
   }
 }
