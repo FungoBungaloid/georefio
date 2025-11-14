@@ -339,7 +339,7 @@ class MagicGeoreferencerDialog(QDialog):
                 from PIL import Image
                 img = Image.open(self.source_image_path)
                 width, height = img.size
-                self.image_info_label.setText(f"Image size: {width} � {height} px")
+                self.image_info_label.setText(f"Image size: {width} x {height} px")
             except:
                 self.image_info_label.setText("Image loaded")
 
