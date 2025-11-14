@@ -1,0 +1,42 @@
+{
+  "performance": {
+    "use_gpu": true,
+    "cpu_threads": 4
+  },
+  "matching": {
+    "default_quality_preset": "balanced",
+    "enable_progressive_refinement": true,
+    "progressive_scales": [512, 768, 1024],
+    "confidence_thresholds": {
+      "strict": 0.85,
+      "balanced": 0.70,
+      "permissive": 0.55
+    },
+    "min_gcps": 6,
+    "geometric_threshold": 0.8
+  },
+  "tile_fetching": {
+    "default_basemap_source": "osm_standard",
+    "tile_cache_size_mb": 500,
+    "tile_cache_expiry_days": 30,
+    "default_zoom_level": 17
+  },
+  "georeferencing": {
+    "default_transform_type": "auto",
+    "default_resampling": "cubic",
+    "default_compression": "LZW",
+    "auto_load_result": true
+  },
+  "output": {
+    "default_output_directory": "~/georeferenced_outputs",
+    "output_naming_scheme": "{source_name}_georef.tif"
+  },
+  "ui": {
+    "show_overlay_preview": true,
+    "show_confidence_viewer": true
+  },
+  "model": {
+    "weights_url": "https://huggingface.co/LittleFrog/MatchAnything/resolve/main/weights.zip",
+    "weights_size_mb": 800
+  }
+}

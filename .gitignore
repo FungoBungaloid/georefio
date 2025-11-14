@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# QGIS
+*.qgs~
+*.qgz~
+
+# Plugin specific
+magic_georeferencer/weights/*.pth
+magic_georeferencer/weights/*.zip
+magic_georeferencer/weights/*.pt
+!magic_georeferencer/weights/.gitkeep
+
+# Tile cache
+magic_georeferencer/tiles/
+*.png
+*.jpg
+*.jpeg
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test outputs
+test_outputs/
+*.tif
+*.tiff
+*.points
+
+# PyQt generated files
+*.ui.py
+resources_rc.py
