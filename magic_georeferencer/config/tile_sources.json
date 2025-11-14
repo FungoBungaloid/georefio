@@ -3,7 +3,7 @@
     "name": "OpenStreetMap Standard",
     "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     "type": "map",
-    "attribution": "© OpenStreetMap contributors",
+    "attribution": "Â© OpenStreetMap contributors",
     "max_zoom": 19,
     "description": "Best for: Road maps, building footprints, labeled features"
   },
@@ -20,7 +20,7 @@
     "url": "https://tile-{s}.openstreetmap.fr/hot/{z}/{x}/{y}.png",
     "subdomains": ["a", "b", "c"],
     "type": "map",
-    "attribution": "© OpenStreetMap contributors, Tiles courtesy of Humanitarian OSM Team",
+    "attribution": "Â© OpenStreetMap contributors, Tiles courtesy of Humanitarian OSM Team",
     "max_zoom": 18,
     "description": "Best for: High contrast, simplified features"
   }
