@@ -18,65 +18,95 @@
 
 ## Installation Methods
 
-### Method 1: QGIS Plugin Manager (Recommended - When Published)
+### Method 1: Install from ZIP (Recommended)
+
+This is the easiest method for testing and development.
+
+#### Step 1: Prepare the Plugin ZIP
+
+1. Download or clone the repository
+2. Navigate to the `georefio` folder
+3. Create a ZIP file of ONLY the `magic_georeferencer` folder:
+   - **Windows**: Right-click `magic_georeferencer` folder â†’ "Send to" â†’ "Compressed (zipped) folder"
+   - **macOS**: Right-click `magic_georeferencer` folder â†’ "Compress magic_georeferencer"
+   - **Linux**: `zip -r magic_georeferencer.zip magic_georeferencer/`
+
+#### Step 2: Install in QGIS
 
 1. Open QGIS
-2. Go to `Plugins ’ Manage and Install Plugins`
+2. Go to `Plugins > Manage and Install Plugins`
+3. Click on "Install from ZIP" tab
+4. Click the "..." button and select your `magic_georeferencer.zip` file
+5. Click "Install Plugin"
+
+#### Step 3: Install Dependencies (AUTOMATIC)
+
+When you first click the plugin icon in QGIS:
+
+1. A dialog will appear showing missing Python packages
+2. Click **"Install Dependencies"** button
+3. Wait for installation to complete (may take 5-10 minutes)
+4. **Restart QGIS** when prompted
+5. The plugin is now ready to use!
+
+**What gets installed:**
+- PyTorch and TorchVision (deep learning framework)
+- Transformers and HuggingFace Hub (AI model support)
+- OpenCV (image processing)
+- SciPy and NumPy (scientific computing)
+
+### Method 2: Manual Dependency Installation
+
+If automatic installation doesn't work, you can install dependencies manually:
+
+#### Windows (OSGeo4W Shell)
+
+1. Open **OSGeo4W Shell** from Start Menu (comes with QGIS)
+2. Run the following commands:
+
+```bash
+# Navigate to plugin directory
+cd "C:\Users\YourName\AppData\Roaming\QGIS\QGIS3\profiles\default\python\plugins\magic_georeferencer"
+
+# Install dependencies
+python -m pip install --user -r requirements.txt
+```
+
+Or install packages individually:
+```bash
+python -m pip install --user opencv-python>=4.8.0
+python -m pip install --user torch>=2.0.0 torchvision>=0.15.0
+python -m pip install --user transformers>=4.30.0 huggingface-hub>=0.16.0
+python -m pip install --user scipy>=1.9.0
+```
+
+#### macOS/Linux
+
+1. Open Terminal
+2. Find QGIS Python path:
+```bash
+# Method 1: Check QGIS Python
+which python3
+
+# Method 2: Check in QGIS Python Console
+# Open QGIS > Plugins > Python Console > Type: import sys; print(sys.executable)
+```
+
+3. Install dependencies:
+```bash
+# Replace /path/to/qgis/python3 with actual path
+/path/to/qgis/python3 -m pip install --user -r requirements.txt
+```
+
+### Method 3: QGIS Plugin Manager (When Published)
+
+Once published to the official QGIS plugin repository:
+
+1. Open QGIS
+2. Go to `Plugins > Manage and Install Plugins`
 3. Search for "Magic Georeferencer"
 4. Click "Install Plugin"
-5. Enable the plugin if not automatically enabled
-
-### Method 2: Manual Installation (Development/Testing)
-
-#### Step 1: Locate QGIS Plugins Directory
-
-**Windows:**
-```
-C:\Users\YourName\AppData\Roaming\QGIS\QGIS3\profiles\default\python\plugins\
-```
-
-**macOS:**
-```
-~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/
-```
-
-**Linux:**
-```
-~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/
-```
-
-#### Step 2: Install the Plugin
-
-**Option A: Clone from Git**
-```bash
-cd [QGIS plugins directory]
-git clone https://github.com/yourusername/georefio.git
-cd georefio
-cp -r magic_georeferencer ../
-```
-
-**Option B: Download and Extract**
-1. Download the plugin ZIP file
-2. Extract to the QGIS plugins directory
-3. Ensure the folder is named `magic_georeferencer`
-
-#### Step 3: Install Python Dependencies
-
-The plugin requires additional Python packages. Install them in QGIS's Python environment:
-
-**On Windows (using OSGeo4W Shell):**
-```bash
-python-qgis -m pip install torch torchvision transformers huggingface-hub scipy
-```
-
-**On macOS/Linux:**
-```bash
-# Find QGIS Python
-which python3  # or the python bundled with QGIS
-
-# Install packages
-pip3 install torch torchvision transformers huggingface-hub scipy opencv-python-headless
-```
+5. Dependencies will be automatically installed
 
 **Alternative: Use QGIS Python Console**
 ```python
@@ -98,7 +128,7 @@ for package in packages:
 #### Step 4: Enable the Plugin
 
 1. Restart QGIS
-2. Go to `Plugins ’ Manage and Install Plugins`
+2. Go to `Plugins ï¿½ Manage and Install Plugins`
 3. Click on "Installed" tab
 4. Find "Magic Georeferencer" and check the box to enable it
 
@@ -128,7 +158,7 @@ If no GPU is found:
 
 1. Open QGIS
 2. Look for the Magic Georeferencer icon in the toolbar
-3. Or go to `Raster ’ Magic Georeferencer`
+3. Or go to `Raster ï¿½ Magic Georeferencer`
 
 ### Test the Plugin
 
@@ -145,7 +175,7 @@ If no GPU is found:
 **Solutions:**
 1. Check the plugin directory path is correct
 2. Ensure the folder is named exactly `magic_georeferencer`
-3. Check QGIS error log: `Plugins ’ Python Console ’ Show Errors`
+3. Check QGIS error log: `Plugins ï¿½ Python Console ï¿½ Show Errors`
 4. Verify QGIS version is 3.22 or higher
 
 ### Import Errors
@@ -154,7 +184,7 @@ If no GPU is found:
 
 **Solutions:**
 1. Install dependencies in QGIS Python environment (see Step 3 above)
-2. Check Python path in QGIS: `Settings ’ Options ’ System ’ Environment`
+2. Check Python path in QGIS: `Settings ï¿½ Options ï¿½ System ï¿½ Environment`
 3. Try installing with pip in QGIS Python Console
 
 ### CUDA Not Detected
@@ -201,7 +231,7 @@ If no GPU is found:
 
 ### Using Plugin Manager
 
-1. Go to `Plugins ’ Manage and Install Plugins`
+1. Go to `Plugins ï¿½ Manage and Install Plugins`
 2. Find "Magic Georeferencer"
 3. Click "Uninstall Plugin"
 
@@ -217,7 +247,7 @@ If no GPU is found:
 
 ### Via Plugin Manager (When Published)
 
-1. Go to `Plugins ’ Manage and Install Plugins`
+1. Go to `Plugins ï¿½ Manage and Install Plugins`
 2. Click "Upgradeable" tab
 3. Find "Magic Georeferencer" if an update is available
 4. Click "Upgrade Plugin"
@@ -233,7 +263,7 @@ If no GPU is found:
 
 If you encounter issues:
 
-1. **Check the logs**: `Plugins ’ Python Console` in QGIS
+1. **Check the logs**: `Plugins ï¿½ Python Console` in QGIS
 2. **Read the documentation**: See `USAGE.md` and `README.md`
 3. **Report issues**: https://github.com/yourusername/georefio/issues
 4. **Ask for help**: QGIS community forums or plugin GitHub discussions
@@ -248,7 +278,7 @@ If you encounter issues:
 
 ### macOS
 
-- May need to allow Python to access files in System Preferences ’ Security
+- May need to allow Python to access files in System Preferences ï¿½ Security
 - Use Homebrew Python if QGIS Python has issues
 - M1/M2 Macs: Use CPU mode (PyTorch MPS support coming soon)
 
