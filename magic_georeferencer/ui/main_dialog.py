@@ -339,7 +339,7 @@ class MagicGeoreferencerDialog(QDialog):
                 from PIL import Image
                 img = Image.open(self.source_image_path)
                 width, height = img.size
-                self.image_info_label.setText(f"Image size: {width} × {height} px")
+                self.image_info_label.setText(f"Image size: {width} ï¿½ {height} px")
             except:
                 self.image_info_label.setText("Image loaded")
 
@@ -365,26 +365,211 @@ class MagicGeoreferencerDialog(QDialog):
         return True, ""
 
     def _run_matching(self):
-        """Run the matching workflow"""
+        """Run the full matching workflow"""
         # Validate inputs
         is_valid, error_msg = self._validate_inputs()
         if not is_valid:
             QMessageBox.warning(self, "Validation Error", error_msg)
             return
 
-        # TODO: Implement full matching workflow
-        QMessageBox.information(
-            self,
-            "Not Implemented",
-            "Full matching workflow is not yet implemented.\n\n"
-            "This is the initial plugin structure. The matching workflow will:\n"
-            "1. Capture map canvas or fetch tiles\n"
-            "2. Run MatchAnything inference\n"
-            "3. Filter and validate matches\n"
-            "4. Generate GCPs\n"
-            "5. Show confidence viewer\n"
-            "6. Georeference the image"
-        )
+        # Create progress dialog
+        progress = ProgressDialog(self, "Magic Georeferencer")
+
+        try:
+            # Step 1: Load source image
+            progress.set_status("Loading source image...")
+            progress.set_progress(0, 100)
+            progress.show()
+
+            from PIL import Image
+            import numpy as np
+
+            src_image = np.array(Image.open(self.source_image_path).convert('RGB'))
+            src_image_size = (src_image.shape[1], src_image.shape[0])  # (width, height)
+
+            progress.set_progress(10, 100)
+
+            # Step 2: Capture map canvas or fetch tiles
+            progress.set_status("Capturing basemap...")
+
+            tile_fetcher = TileFetcher()
+            basemap_source = self.basemap_combo.currentData()
+
+            # Get current canvas extent and CRS
+            canvas = self.iface.mapCanvas()
+            extent = canvas.extent()
+            crs = canvas.mapSettings().destinationCrs()
+
+            # Capture canvas
+            try:
+                ref_image, ref_extent = tile_fetcher.capture_canvas(self.iface, size=1024)
+            except Exception as e:
+                # Fallback to tile fetching
+                print(f"Canvas capture failed: {e}, falling back to tile fetching")
+                zoom_level = self.settings['tile_fetching']['default_zoom_level']
+                ref_image, ref_extent = tile_fetcher.fetch_tiles(
+                    extent, crs, basemap_source, zoom_level, size=1024
+                )
+
+            ref_image_size = (ref_image.shape[1], ref_image.shape[0])
+
+            progress.set_progress(30, 100)
+
+            # Step 3: Run matching
+            progress.set_status("Running AI matching...")
+
+            # Get quality threshold
+            quality_preset = self.quality_combo.currentData()
+            confidence_threshold = self.settings['matching']['confidence_thresholds'][quality_preset]
+
+            # Configure progressive refinement
+            use_progressive = self.progressive_checkbox.isChecked()
+
+            if use_progressive:
+                scales = self.settings['matching']['progressive_scales']
+                match_result = self.matcher.match_progressive(
+                    src_image, ref_image,
+                    scales=scales,
+                    min_gcps=self.settings['matching']['min_gcps']
+                )
+            else:
+                match_result = self.matcher.match_single_scale(
+                    src_image, ref_image,
+                    size=self.matcher.config['size']
+                )
+
+            progress.set_progress(60, 100)
+
+            # Step 4: Filter matches
+            progress.set_status("Filtering matches...")
+
+            match_result = self.matcher.filter_matches(
+                match_result,
+                confidence_threshold=confidence_threshold,
+                min_gcps=self.settings['matching']['min_gcps']
+            )
+
+            # Check if we have enough matches
+            if match_result.num_matches() < self.settings['matching']['min_gcps']:
+                progress.close()
+                QMessageBox.warning(
+                    self,
+                    "Insufficient Matches",
+                    f"Only {match_result.num_matches()} matches found.\n"
+                    f"Minimum required: {self.settings['matching']['min_gcps']}\n\n"
+                    "Try:\n"
+                    "- Lowering the quality threshold\n"
+                    "- Using a different basemap source\n"
+                    "- Ensuring you're zoomed to the correct location"
+                )
+                return
+
+            progress.set_progress(70, 100)
+
+            # Step 5: Generate GCPs
+            progress.set_status("Generating Ground Control Points...")
+
+            gcp_generator = GCPGenerator()
+            gcps = gcp_generator.matches_to_gcps(
+                match_result,
+                ref_extent,
+                crs,
+                ref_image_size,
+                src_image_size
+            )
+
+            progress.set_progress(80, 100)
+
+            # Step 6: Show confidence viewer (if enabled)
+            progress.close()
+
+            if self.settings['ui']['show_confidence_viewer']:
+                from .confidence_viewer import ConfidenceViewer
+
+                viewer = ConfidenceViewer(match_result, self)
+                result = viewer.exec_()
+
+                # If user cancelled, stop here
+                if result != viewer.Accepted:
+                    return
+
+            # Step 7: Georeference
+            output_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Georeferenced Image",
+                str(self.source_image_path.with_name(
+                    self.source_image_path.stem + "_georef.tif"
+                )),
+                "GeoTIFF (*.tif *.tiff)"
+            )
+
+            if not output_path:
+                return  # User cancelled
+
+            output_path = Path(output_path)
+
+            progress = ProgressDialog(self, "Georeferencing")
+            progress.set_status("Georeferencing image...")
+            progress.set_indeterminate(True)
+            progress.show()
+
+            georeferencer = Georeferencer(self.iface)
+
+            # Suggest transform type
+            transform_type = georeferencer.suggest_transform_type(
+                match_result.num_matches(),
+                match_result.distribution_quality
+            )
+
+            # Perform georeferencing
+            success, message = georeferencer.georeference_image(
+                self.source_image_path,
+                gcps,
+                output_path,
+                crs,
+                transform_type=transform_type,
+                resampling=self.settings['georeferencing']['default_resampling'],
+                compression=self.settings['georeferencing']['default_compression']
+            )
+
+            progress.close()
+
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Success!",
+                    f"Image georeferenced successfully!\n\n"
+                    f"Output: {output_path}\n"
+                    f"Matches: {match_result.num_matches()}\n"
+                    f"Mean confidence: {match_result.mean_confidence():.2f}\n"
+                    f"Transform type: {transform_type}\n\n"
+                    f"The georeferenced image has been added to the map."
+                )
+
+                # Update status
+                self.status_label.setText("âœ“ Georeferencing complete!")
+
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Georeferencing Failed",
+                    f"Failed to georeference image:\n{message}"
+                )
+
+        except Exception as e:
+            if 'progress' in locals():
+                progress.close()
+
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred during processing:\n\n{str(e)}\n\n"
+                f"Check the QGIS Python console for details."
+            )
+
+            # Print detailed error to console
+            import traceback
+            traceback.print_exc()
 
     def _show_help(self):
         """Show help dialog"""
