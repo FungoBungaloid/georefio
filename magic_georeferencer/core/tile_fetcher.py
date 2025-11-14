@@ -37,7 +37,7 @@ class TileFetcher:
         """Initialize TileFetcher"""
         # Load tile source configurations
         config_path = Path(__file__).parent.parent / 'config' / 'tile_sources.json'
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding='utf-8') as f:
             self.tile_sources = json.load(f)
 
         # Set up cache directory

@@ -244,7 +244,7 @@ class GCPGenerator:
             gcps: List of GCPs
             filepath: Output file path
         """
-        with open(filepath, 'w') as f:
+        with open(filepath, 'w', encoding='utf-8') as f:
             # Write header
             f.write("mapX,mapY,pixelX,pixelY,enable,dX,dY,residual\n")
 
@@ -280,7 +280,7 @@ class GCPGenerator:
         """
         gcps = []
 
-        with open(filepath, 'r') as f:
+        with open(filepath, 'r', encoding='utf-8') as f:
             # Skip header
             next(f)
 

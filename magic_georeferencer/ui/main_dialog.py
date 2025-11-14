@@ -48,12 +48,12 @@ class MagicGeoreferencerDialog(QDialog):
 
         # Load settings
         config_path = Path(__file__).parent.parent / 'config' / 'default_settings.json'
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding='utf-8') as f:
             self.settings = json.load(f)
 
         # Load tile sources
         tile_config_path = Path(__file__).parent.parent / 'config' / 'tile_sources.json'
-        with open(tile_config_path, 'r') as f:
+        with open(tile_config_path, 'r', encoding='utf-8') as f:
             self.tile_sources = json.load(f)
 
         # Setup UI
