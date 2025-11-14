@@ -1,7 +1,7 @@
 """
-MatchAnything Inference Wrapper for Magic Georeferencer
+MatchAnything-ELoFTR Inference Wrapper for Magic Georeferencer
 
-Simplified inference interface for the MatchAnything deep learning model.
+Inference interface using HuggingFace Transformers for the MatchAnything-ELoFTR model.
 """
 
 import numpy as np
@@ -11,17 +11,28 @@ from pathlib import Path
 from typing import Tuple, Optional
 from PIL import Image
 
+try:
+    from transformers import AutoImageProcessor, AutoModel
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+
 
 class MatchAnythingInference:
-    """Simplified MatchAnything inference wrapper"""
+    """MatchAnything-ELoFTR inference wrapper using HuggingFace Transformers"""
+
+    MODEL_REPO = "zju-community/matchanything_eloftr"
 
     def __init__(self, weights_path: Path, device: str = 'auto'):
-        """Initialize MatchAnything model.
+        """Initialize MatchAnything-ELoFTR model.
 
         Args:
-            weights_path: Path to model weights directory
+            weights_path: Path to model cache directory (HuggingFace cache)
             device: 'cuda', 'cpu', or 'auto' (auto-detect)
         """
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError("transformers library not available. Please install: pip install transformers")
+
         self.weights_path = Path(weights_path)
 
         # Auto-detect device if needed
@@ -30,62 +41,37 @@ class MatchAnythingInference:
         else:
             self.device = device
 
-        # Load model
-        self.model = self._load_model()
-        if self.model is not None:
-            self.model.to(self.device)
-            self.model.eval()
+        # Load model from HuggingFace
+        self.processor, self.model = self._load_model()
+        self.model.to(self.device)
+        self.model.eval()
 
     def _load_model(self):
-        """Load MatchAnything model from weights.
+        """Load MatchAnything-ELoFTR model from HuggingFace Hub.
 
         Returns:
-            Loaded model or None if loading fails
-
-        Note: This is a placeholder implementation. The actual implementation
-        will depend on the MatchAnything model architecture and API.
+            Tuple of (processor, model)
         """
         try:
-            # TODO: Replace with actual MatchAnything loading code
-            # This will depend on their model architecture
+            # Load image processor and model from HuggingFace
+            print(f"Loading model from HuggingFace: {self.MODEL_REPO}")
+            print(f"Cache directory: {self.weights_path}")
 
-            # Placeholder: Check for common weight file names
-            weight_candidates = [
-                'model_checkpoint.pth',
-                'model.pth',
-                'checkpoint.pth',
-                'weights.pth'
-            ]
+            processor = AutoImageProcessor.from_pretrained(
+                self.MODEL_REPO,
+                cache_dir=self.weights_path
+            )
 
-            weight_file = None
-            for candidate in weight_candidates:
-                candidate_path = self.weights_path / candidate
-                if candidate_path.exists():
-                    weight_file = candidate_path
-                    break
+            model = AutoModel.from_pretrained(
+                self.MODEL_REPO,
+                cache_dir=self.weights_path
+            )
 
-            if weight_file is None:
-                # Check for any .pth file
-                pth_files = list(self.weights_path.glob('*.pth'))
-                if pth_files:
-                    weight_file = pth_files[0]
-                else:
-                    raise FileNotFoundError(f"No weight files found in {self.weights_path}")
-
-            # TODO: Replace this with actual MatchAnything model loading
-            # For now, return a placeholder that will be replaced
-            # when integrating the actual MatchAnything code
-
-            # Example structure (depends on actual MatchAnything API):
-            # from matchanything.model import MatchAnythingModel
-            # model = MatchAnythingModel.load_from_checkpoint(weight_file)
-
-            print(f"Found weights at: {weight_file}")
-            return None  # Placeholder - will be replaced with actual model
+            print(f"Model loaded successfully")
+            return processor, model
 
         except Exception as e:
-            print(f"Error loading model: {e}")
-            raise
+            raise RuntimeError(f"Failed to load model from HuggingFace: {e}")
 
     def match_images(
         self,
@@ -115,16 +101,22 @@ class MatchAnythingInference:
 
         # Run inference
         with torch.no_grad():
-            # TODO: Replace with actual MatchAnything inference call
-            # This is a placeholder structure
+            # TODO: Complete implementation based on ELoFTR/MatchAnything API
+            # The exact inference API needs to be determined from the model documentation
 
-            # Example (depends on actual MatchAnything API):
-            # results = self.model(img1_tensor, img2_tensor, max_keypoints=max_keypoints)
+            # Expected approach (to be confirmed):
+            # inputs = self.processor([image1, image2], return_tensors="pt").to(self.device)
+            # outputs = self.model(**inputs)
+            # keypoints1 = outputs.keypoints0  # or similar
+            # keypoints2 = outputs.keypoints1
+            # confidence = outputs.confidence
 
-            # For now, return dummy results for testing structure
-            # This will be replaced when integrating actual MatchAnything
-            num_matches = min(max_keypoints, 100)  # Placeholder
+            # Placeholder: return dummy results for initial testing
+            # This will be replaced when integrating actual ELoFTR inference
+            print("WARNING: Using placeholder match_images implementation")
+            print("TODO: Implement actual ELoFTR inference based on model API")
 
+            num_matches = min(max_keypoints, 100)
             keypoints1 = np.random.rand(num_matches, 2) * np.array([image1.shape[1], image1.shape[0]])
             keypoints2 = np.random.rand(num_matches, 2) * np.array([image2.shape[1], image2.shape[0]])
             confidence = np.random.rand(num_matches)
@@ -132,7 +124,7 @@ class MatchAnythingInference:
         return keypoints1, keypoints2, confidence
 
     def _preprocess_image(self, image: np.ndarray) -> torch.Tensor:
-        """Preprocess image for MatchAnything inference.
+        """Preprocess image for ELoFTR inference using HuggingFace processor.
 
         Args:
             image: Input image as numpy array [H, W, 3] in RGB format
@@ -140,22 +132,26 @@ class MatchAnythingInference:
         Returns:
             Preprocessed image tensor ready for model input
         """
-        # TODO: Replace with actual MatchAnything preprocessing requirements
+        # Use the HuggingFace processor for preprocessing
+        # Convert numpy to PIL Image for processor
+        from PIL import Image as PILImage
 
-        # Common preprocessing steps (may need adjustment):
-        # 1. Convert to float and normalize
-        image_float = image.astype(np.float32) / 255.0
+        if isinstance(image, np.ndarray):
+            # Ensure it's in the correct format (uint8, RGB)
+            if image.dtype != np.uint8:
+                image = (image * 255).astype(np.uint8)
+            pil_image = PILImage.fromarray(image)
+        else:
+            pil_image = image
 
-        # 2. Convert to tensor
-        image_tensor = torch.from_numpy(image_float).permute(2, 0, 1)  # [C, H, W]
+        # Use processor to preprocess
+        # Note: Actual preprocessing may need adjustment based on model requirements
+        inputs = self.processor(images=pil_image, return_tensors="pt")
 
-        # 3. Add batch dimension
-        image_tensor = image_tensor.unsqueeze(0)  # [1, C, H, W]
+        # Move to device
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        # 4. Move to device
-        image_tensor = image_tensor.to(self.device)
-
-        return image_tensor
+        return inputs
 
     def estimate_homography(
         self,

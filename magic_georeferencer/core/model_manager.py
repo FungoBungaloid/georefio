@@ -1,17 +1,12 @@
 """
 Model Manager for Magic Georeferencer
 
-Handles model weight download, CUDA detection, and model loading.
+Handles model weight download, CUDA detection, and model loading using HuggingFace Hub.
 """
 
-import os
-import hashlib
 import json
-import requests
-import zipfile
 from pathlib import Path
 from typing import Callable, Optional, Dict, Tuple
-from urllib.parse import urlparse
 
 try:
     import torch
@@ -19,15 +14,23 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
+try:
+    from transformers import AutoImageProcessor, AutoModel
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+
 
 class ModelManager:
-    """Manages MatchAnything model weights and loading"""
+    """Manages MatchAnything-ELoFTR model weights and loading via HuggingFace"""
+
+    MODEL_REPO = "zju-community/matchanything_eloftr"
 
     def __init__(self, weights_dir: Optional[Path] = None):
         """Initialize ModelManager.
 
         Args:
-            weights_dir: Directory to store model weights. If None, uses default.
+            weights_dir: Directory to store model cache. If None, uses default.
         """
         if weights_dir is None:
             # Default to plugin directory / weights
@@ -46,7 +49,7 @@ class ModelManager:
 
         self.device = None
         self.model = None
-        self.weights_url = self.settings['model']['weights_url']
+        self.processor = None
 
     def is_cuda_available(self) -> bool:
         """Check if CUDA-capable GPU is available.
@@ -83,97 +86,80 @@ class ModelManager:
         return info
 
     def weights_exist(self) -> bool:
-        """Check if model weights are already downloaded.
+        """Check if model weights are already cached.
 
         Returns:
-            True if weights exist, False otherwise
+            True if weights exist in HuggingFace cache, False otherwise
         """
-        # Check for common weight file patterns
-        weight_files = [
-            'model_checkpoint.pth',
-            'model.pth',
-            'checkpoint.pth',
-            'weights.pth'
-        ]
+        # Check if HuggingFace cache has the model
+        # The cache will be in weights_dir with HuggingFace structure
+        if not self.weights_dir.exists():
+            return False
 
-        for weight_file in weight_files:
-            if (self.weights_dir / weight_file).exists():
-                return True
+        # Look for HuggingFace model files (config.json, pytorch_model.bin, etc.)
+        has_config = False
+        has_weights = False
 
-        # Also check if directory has any .pth files
-        pth_files = list(self.weights_dir.glob('*.pth'))
-        return len(pth_files) > 0
+        # Recursively search cache directory
+        for path in self.weights_dir.rglob('*'):
+            if path.name == 'config.json':
+                has_config = True
+            if path.name.startswith('pytorch_model') or path.name.startswith('model'):
+                if path.suffix in ['.bin', '.safetensors', '.pth', '.pt']:
+                    has_weights = True
+
+        return has_config and has_weights
 
     def download_weights(
         self,
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> Tuple[bool, str]:
-        """Download model weights from HuggingFace.
+        """Download model weights from HuggingFace Hub.
 
         Args:
             progress_callback: Optional callback function(current, total) for progress updates
+                             Note: HuggingFace doesn't provide granular progress, so this may not be called
 
         Returns:
             Tuple of (success: bool, message: str)
         """
+        if not TRANSFORMERS_AVAILABLE:
+            return False, "Transformers library not installed. Please install: pip install transformers"
+
         try:
-            # Download weights.zip
-            zip_path = self.weights_dir / 'weights.zip'
+            # Download model and processor using transformers
+            # This will download to cache_dir automatically
+            print(f"Downloading model from HuggingFace: {self.MODEL_REPO}")
+            print(f"Cache directory: {self.weights_dir}")
 
-            # Check if already exists
-            if zip_path.exists():
-                # Verify if it's a complete download by checking size
-                expected_size = self.settings['model']['weights_size_mb'] * 1024 * 1024
-                actual_size = zip_path.stat().st_size
+            # Download processor (smaller, downloads first)
+            AutoImageProcessor.from_pretrained(
+                self.MODEL_REPO,
+                cache_dir=self.weights_dir
+            )
 
-                if actual_size < expected_size * 0.9:  # Allow 10% variance
-                    # Incomplete download, remove it
-                    zip_path.unlink()
+            # Download model (larger)
+            AutoModel.from_pretrained(
+                self.MODEL_REPO,
+                cache_dir=self.weights_dir
+            )
 
-            # Download with progress
-            response = requests.get(self.weights_url, stream=True, timeout=30)
-            response.raise_for_status()
+            return True, f"Model downloaded successfully from {self.MODEL_REPO}"
 
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
-
-            with open(zip_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-
-                        if progress_callback:
-                            progress_callback(downloaded, total_size)
-
-            # Verify download (basic size check)
-            if total_size > 0 and downloaded < total_size * 0.9:
-                return False, f"Download incomplete: {downloaded}/{total_size} bytes"
-
-            # Extract weights
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(self.weights_dir)
-
-            # Cleanup zip file
-            zip_path.unlink()
-
-            return True, "Weights downloaded successfully"
-
-        except requests.RequestException as e:
-            return False, f"Download failed: {str(e)}"
-        except zipfile.BadZipFile as e:
-            return False, f"Invalid zip file: {str(e)}"
         except Exception as e:
-            return False, f"Error downloading weights: {str(e)}"
+            return False, f"Failed to download model from HuggingFace: {str(e)}"
 
     def load_model(self) -> Tuple[bool, str]:
-        """Load MatchAnything model into memory.
+        """Load MatchAnything-ELoFTR model from HuggingFace cache.
 
         Returns:
             Tuple of (success: bool, message: str)
         """
         if not TORCH_AVAILABLE:
             return False, "PyTorch is not installed. Please install torch to use this plugin."
+
+        if not TRANSFORMERS_AVAILABLE:
+            return False, "Transformers library not installed. Please install: pip install transformers"
 
         if not self.weights_exist():
             return False, "Model weights not found. Please download them first."
@@ -188,7 +174,7 @@ class ModelManager:
             # Import MatchAnything inference wrapper
             from ..matchanything.inference import MatchAnythingInference
 
-            # Load model
+            # Load model using HuggingFace transformers
             self.model = MatchAnythingInference(
                 weights_path=self.weights_dir,
                 device=self.device
@@ -197,7 +183,7 @@ class ModelManager:
             return True, f"Model loaded successfully on {self.device}"
 
         except ImportError as e:
-            return False, f"Failed to import MatchAnything: {str(e)}"
+            return False, f"Failed to import dependencies: {str(e)}"
         except Exception as e:
             return False, f"Failed to load model: {str(e)}"
 

@@ -93,8 +93,9 @@ class ModelManager:
         
     def download_weights(self, progress_callback: Callable) -> bool:
         """
-        Download weights from HuggingFace with progress updates
-        URL: https://huggingface.co/LittleFrog/MatchAnything/resolve/main/weights.zip
+        Download weights from HuggingFace Hub
+        Model: zju-community/matchanything_eloftr
+        Uses huggingface_hub library for automatic download and caching
         Returns: True on success, False on failure
         """
         
@@ -117,16 +118,37 @@ class ModelManager:
         """Free memory"""
 ```
 
-**Download Process:**
+**Download Process (HuggingFace Hub):**
 ```python
+from huggingface_hub import hf_hub_download
+
 def download_weights(self, progress_callback):
     """
-    1. Create weights directory if needed
-    2. Download weights.zip with resume support
-    3. Verify checksum (MD5/SHA256)
-    4. Extract to weights/
-    5. Cleanup zip file
-    6. Call progress_callback(current, total) during download
+    Download model from HuggingFace Hub using transformers/huggingface_hub
+
+    Model Repository: zju-community/matchanything_eloftr
+
+    Approach 1 (Recommended - using transformers):
+    from transformers import AutoImageProcessor, AutoModel
+    processor = AutoImageProcessor.from_pretrained("zju-community/matchanything_eloftr",
+                                                   cache_dir=self.weights_dir)
+    model = AutoModel.from_pretrained("zju-community/matchanything_eloftr",
+                                      cache_dir=self.weights_dir)
+
+    Approach 2 (Manual with hf_hub_download):
+    model_path = hf_hub_download(
+        repo_id="zju-community/matchanything_eloftr",
+        filename="pytorch_model.bin",
+        cache_dir=self.weights_dir,
+        resume_download=True
+    )
+
+    Benefits:
+    - No Google Drive authentication issues
+    - Built-in resume support
+    - Automatic caching and versioning
+    - Progress tracking available
+    - Apache 2.0 license
     """
 ```
 
@@ -758,47 +780,69 @@ SETTINGS = {
 
 ---
 
-## MatchAnything Integration
+## MatchAnything-ELoFTR Integration
+
+### Model Information
+
+- **Model Name**: MatchAnything-ELoFTR
+- **HuggingFace Repository**: `zju-community/matchanything_eloftr`
+- **License**: Apache 2.0
+- **Base Architecture**: EfficientLoFTR (Enhanced LoFTR)
+- **Paper**: "MatchAnything: Universal Cross-Modality Image Matching with Large-Scale Pre-Training"
+- **Capabilities**: Cross-modality matching (visible, thermal, SAR, maps, etc.)
 
 ### Wrapper Implementation (`matchanything/inference.py`)
 
-**Purpose:** Simplify MatchAnything inference for plugin use
+**Purpose:** Simplify MatchAnything-ELoFTR inference for plugin use using HuggingFace Transformers
 
 ```python
 import torch
 import numpy as np
 from pathlib import Path
 from typing import Tuple, Optional
+from transformers import AutoImageProcessor, AutoModel
 
 class MatchAnythingInference:
-    """Simplified MatchAnything inference wrapper"""
-    
+    """MatchAnything-ELoFTR inference wrapper using HuggingFace Transformers"""
+
+    MODEL_REPO = "zju-community/matchanything_eloftr"
+
     def __init__(self, weights_path: Path, device: str = 'auto'):
         """
-        Initialize MatchAnything model
-        
+        Initialize MatchAnything-ELoFTR model
+
         Args:
-            weights_path: Path to model weights directory
+            weights_path: Path to model cache directory (HuggingFace cache)
             device: 'cuda', 'cpu', or 'auto' (auto-detect)
         """
         self.weights_path = weights_path
-        
+
         # Auto-detect device if needed
         if device == 'auto':
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         else:
             self.device = device
-            
-        # Load model (actual implementation depends on MatchAnything API)
-        self.model = self._load_model()
+
+        # Load model from HuggingFace
+        self.processor, self.model = self._load_model()
         self.model.to(self.device)
         self.model.eval()
-        
+
     def _load_model(self):
-        """Load MatchAnything model from weights"""
-        # TODO: Use actual MatchAnything loading code
-        # This will depend on their model architecture
-        pass
+        """Load MatchAnything-ELoFTR model from HuggingFace Hub"""
+        try:
+            # Load image processor and model
+            processor = AutoImageProcessor.from_pretrained(
+                self.MODEL_REPO,
+                cache_dir=self.weights_path
+            )
+            model = AutoModel.from_pretrained(
+                self.MODEL_REPO,
+                cache_dir=self.weights_path
+            )
+            return processor, model
+        except Exception as e:
+            raise RuntimeError(f"Failed to load model from HuggingFace: {e}")
         
     def match_images(self, 
                     image1: np.ndarray, 
@@ -877,6 +921,8 @@ class MatchAnythingInference:
 ```
 torch>=2.0.0
 torchvision>=0.15.0
+transformers>=4.30.0
+huggingface-hub>=0.16.0
 numpy>=1.21.0
 opencv-python>=4.8.0
 pillow>=9.0.0
