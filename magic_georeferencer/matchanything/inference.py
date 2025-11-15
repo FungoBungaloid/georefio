@@ -129,26 +129,58 @@ class MatchAnythingInference:
             keypoints2 = None
             confidence = None
 
-            # Method 1: Check for keypoints attribute (KeypointMatchingOutput)
-            if hasattr(outputs, 'keypoints'):
-                keypoints_data = outputs.keypoints
-                if isinstance(keypoints_data, (list, tuple)) and len(keypoints_data) == 2:
-                    keypoints1 = keypoints_data[0].cpu().numpy()
-                    keypoints2 = keypoints_data[1].cpu().numpy()
-                    print(f"✓ Extracted keypoints from outputs.keypoints: {len(keypoints1)} matches")
+            # Method 1: Try dict-like access for KeypointMatchingOutput
+            if hasattr(outputs, 'keypoints') and hasattr(outputs.keypoints, 'shape'):
+                # keypoints is a tensor, check its shape
+                kp = outputs.keypoints
+                print(f"Debug: keypoints shape: {kp.shape}")
+                if len(kp.shape) == 3 and kp.shape[0] == 2:
+                    # Shape is [2, N, 2] - first dim is image index
+                    keypoints1 = kp[0].cpu().numpy()
+                    keypoints2 = kp[1].cpu().numpy()
+                    print(f"✓ Extracted keypoints from outputs.keypoints tensor [2,N,2]: {len(keypoints1)} matches")
+                elif len(kp.shape) == 2:
+                    # Might need to use matches to split them
+                    print(f"Debug: keypoints is 2D tensor, checking matches attribute")
 
-            # Method 2: Check for separate keypoints0/keypoints1 attributes
+            # Method 2: Try accessing as dict items (KeypointMatchingOutput is dict-like)
+            if keypoints1 is None and hasattr(outputs, 'items'):
+                try:
+                    output_dict = dict(outputs.items())
+                    print(f"Debug: Output dict keys: {output_dict.keys()}")
+
+                    # Check for keypoints in dict format
+                    if 'keypoints' in output_dict:
+                        kp = output_dict['keypoints']
+                        if hasattr(kp, 'shape'):
+                            print(f"Debug: dict keypoints shape: {kp.shape}")
+                            if len(kp.shape) == 3 and kp.shape[0] == 2:
+                                keypoints1 = kp[0].cpu().numpy()
+                                keypoints2 = kp[1].cpu().numpy()
+                                print(f"✓ Extracted from dict keypoints [2,N,2]: {len(keypoints1)} matches")
+                except Exception as e:
+                    print(f"Debug: Failed to extract from dict: {e}")
+
+            # Method 3: Try using matches attribute to reconstruct keypoint pairs
+            if keypoints1 is None and hasattr(outputs, 'matches') and hasattr(outputs, 'keypoints'):
+                try:
+                    matches = outputs.matches
+                    keypoints = outputs.keypoints
+                    print(f"Debug: matches shape: {matches.shape if hasattr(matches, 'shape') else 'unknown'}")
+                    print(f"Debug: keypoints shape: {keypoints.shape if hasattr(keypoints, 'shape') else 'unknown'}")
+
+                    # matches might be indices or a match matrix
+                    # keypoints might be all keypoints from both images
+                    # This is a common LoFTR-style output format
+
+                except Exception as e:
+                    print(f"Debug: Failed to use matches: {e}")
+
+            # Method 4: Direct attribute access
             if keypoints1 is None and hasattr(outputs, 'keypoints0') and hasattr(outputs, 'keypoints1'):
                 keypoints1 = outputs.keypoints0.cpu().numpy()
                 keypoints2 = outputs.keypoints1.cpu().numpy()
                 print(f"✓ Extracted keypoints from outputs.keypoints0/keypoints1: {len(keypoints1)} matches")
-
-            # Method 3: Check if output is a dict-like object
-            if keypoints1 is None and isinstance(outputs, dict):
-                if 'keypoints0' in outputs and 'keypoints1' in outputs:
-                    keypoints1 = outputs['keypoints0'].cpu().numpy()
-                    keypoints2 = outputs['keypoints1'].cpu().numpy()
-                    print(f"✓ Extracted keypoints from dict outputs: {len(keypoints1)} matches")
 
             # Extract confidence scores
             if keypoints1 is not None:
