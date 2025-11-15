@@ -10,7 +10,8 @@
     "confidence_thresholds": {
       "strict": 0.85,
       "balanced": 0.70,
-      "permissive": 0.55
+      "permissive": 0.55,
+      "very_permissive": 0.20
     },
     "min_gcps": 6,
     "geometric_threshold": 0.8
