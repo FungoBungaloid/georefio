@@ -129,8 +129,16 @@ class MatchAnythingInference:
             keypoints2 = None
             confidence = None
 
+            # Debug: Check what keypoints actually is
+            if hasattr(outputs, 'keypoints'):
+                kp = outputs.keypoints
+                print(f"Debug: outputs.keypoints type: {type(kp)}")
+                print(f"Debug: outputs.keypoints value: {kp}")
+                if kp is not None and hasattr(kp, 'shape'):
+                    print(f"Debug: outputs.keypoints shape: {kp.shape}")
+
             # Method 1: Try dict-like access for KeypointMatchingOutput
-            if hasattr(outputs, 'keypoints') and hasattr(outputs.keypoints, 'shape'):
+            if hasattr(outputs, 'keypoints') and outputs.keypoints is not None and hasattr(outputs.keypoints, 'shape'):
                 # keypoints is a tensor, check its shape
                 kp = outputs.keypoints
                 print(f"Debug: keypoints shape: {kp.shape}")
