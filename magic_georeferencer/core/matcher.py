@@ -214,8 +214,19 @@ class Matcher:
         if matches.num_matches() == 0:
             return matches
 
+        # Debug: Print confidence statistics
+        print(f"Debug: Confidence values before filtering:")
+        print(f"  - Count: {len(matches.confidence)}")
+        print(f"  - Min: {matches.confidence.min():.4f}")
+        print(f"  - Max: {matches.confidence.max():.4f}")
+        print(f"  - Mean: {matches.confidence.mean():.4f}")
+        print(f"  - Median: {np.median(matches.confidence):.4f}")
+        print(f"  - Threshold: {confidence_threshold}")
+        print(f"  - Sample values: {matches.confidence[:10]}")
+
         # Filter by confidence threshold
         confidence_mask = matches.confidence >= confidence_threshold
+        print(f"Debug: Matches passing confidence threshold: {confidence_mask.sum()} / {len(confidence_mask)}")
 
         # If we have a homography, also filter by geometric consistency
         if matches.transform_matrix is not None:
