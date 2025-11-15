@@ -150,6 +150,15 @@ class MatchAnythingInference:
                     keypoints2 = kp[0, 1].cpu().numpy()  # Second image
                     print(f"✓ Extracted keypoints from outputs.keypoints tensor [1,2,N,2]: {len(keypoints1)} keypoints per image")
 
+                    # Debug: Check if all keypoints are identical (suspicious!)
+                    unique_kp1 = np.unique(keypoints1, axis=0)
+                    unique_kp2 = np.unique(keypoints2, axis=0)
+                    print(f"Debug: Unique keypoints img1: {len(unique_kp1)} / {len(keypoints1)}")
+                    print(f"Debug: Unique keypoints img2: {len(unique_kp2)} / {len(keypoints2)}")
+                    if len(unique_kp1) < 10:
+                        print(f"⚠ WARNING: Very few unique keypoints detected!")
+                        print(f"  Sample unique values: {unique_kp1[:5]}")
+
                     # Now use matches to get the actual matched pairs
                     if hasattr(outputs, 'matches'):
                         matches = outputs.matches  # Shape: [1, 2, N]
@@ -295,19 +304,53 @@ class MatchAnythingInference:
                     f"Please check the model output format."
                 )
 
-            # Scale keypoints back to original image sizes if needed
-            # The processor resizes to 832x832, so we need to scale back
-            model_size = 832  # Default from processor
+            # Scale keypoints back to original image sizes
+            # Check if keypoints are in normalized coordinates [-1, 1] or pixel coordinates
+            print(f"Debug: Keypoint ranges before scaling:")
+            print(f"  kp1 x: [{keypoints1[:, 0].min():.3f}, {keypoints1[:, 0].max():.3f}]")
+            print(f"  kp1 y: [{keypoints1[:, 1].min():.3f}, {keypoints1[:, 1].max():.3f}]")
+            print(f"  kp2 x: [{keypoints2[:, 0].min():.3f}, {keypoints2[:, 0].max():.3f}]")
+            print(f"  kp2 y: [{keypoints2[:, 1].min():.3f}, {keypoints2[:, 1].max():.3f}]")
 
-            scale_x1 = orig_w1 / model_size
-            scale_y1 = orig_h1 / model_size
-            scale_x2 = orig_w2 / model_size
-            scale_y2 = orig_h2 / model_size
+            # Check if coordinates appear to be normalized (in range approximately -1 to 1)
+            if abs(keypoints1[:, 0].min()) < 2 and abs(keypoints1[:, 0].max()) < 2:
+                print("Debug: Keypoints appear to be in normalized coordinates [-1, 1]")
+                # Convert from normalized [-1, 1] to pixel coordinates [0, width/height]
+                # Formula: pixel = (normalized + 1) * (size / 2)
+                model_size = 832  # Model processes images at 832x832
+
+                # Convert to pixel space in model coordinates first
+                keypoints1[:, 0] = (keypoints1[:, 0] + 1) * (model_size / 2)
+                keypoints1[:, 1] = (keypoints1[:, 1] + 1) * (model_size / 2)
+                keypoints2[:, 0] = (keypoints2[:, 0] + 1) * (model_size / 2)
+                keypoints2[:, 1] = (keypoints2[:, 1] + 1) * (model_size / 2)
+
+                print(f"Debug: After normalization conversion:")
+                print(f"  kp1 x: [{keypoints1[:, 0].min():.1f}, {keypoints1[:, 0].max():.1f}]")
+                print(f"  kp1 y: [{keypoints1[:, 1].min():.1f}, {keypoints1[:, 1].max():.1f}]")
+
+                # Now scale from model size to original image size
+                scale_x1 = orig_w1 / model_size
+                scale_y1 = orig_h1 / model_size
+                scale_x2 = orig_w2 / model_size
+                scale_y2 = orig_h2 / model_size
+            else:
+                print("Debug: Keypoints appear to be in pixel coordinates")
+                # Assume keypoints are in 832x832 space, scale directly
+                model_size = 832
+                scale_x1 = orig_w1 / model_size
+                scale_y1 = orig_h1 / model_size
+                scale_x2 = orig_w2 / model_size
+                scale_y2 = orig_h2 / model_size
 
             keypoints1[:, 0] *= scale_x1
             keypoints1[:, 1] *= scale_y1
             keypoints2[:, 0] *= scale_x2
             keypoints2[:, 1] *= scale_y2
+
+            print(f"Debug: After scaling to original image size:")
+            print(f"  kp1 x: [{keypoints1[:, 0].min():.1f}, {keypoints1[:, 0].max():.1f}] (orig_w={orig_w1})")
+            print(f"  kp1 y: [{keypoints1[:, 1].min():.1f}, {keypoints1[:, 1].max():.1f}] (orig_h={orig_h1})")
 
             # Limit to max_keypoints if needed
             if len(keypoints1) > max_keypoints:
@@ -352,6 +395,14 @@ class MatchAnythingInference:
             images=[pil_img1, pil_img2],
             return_tensors="pt"
         )
+
+        # Debug: Check what the processor created
+        print(f"Debug: Processor inputs keys: {inputs.keys()}")
+        for key, val in inputs.items():
+            if hasattr(val, 'shape'):
+                print(f"  - {key}: shape {val.shape}, dtype {val.dtype}")
+                if 'pixel' in key.lower():
+                    print(f"    value range: [{val.min():.3f}, {val.max():.3f}]")
 
         # Move to device
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
