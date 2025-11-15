@@ -67,6 +67,9 @@ class Matcher:
 
         self.model = model_manager.model
 
+        # Debug directory (can be set by UI)
+        self.debug_dir = Path.home() / "georefio_debug"
+
     def match_progressive(
         self,
         image_src: np.ndarray,
@@ -279,9 +282,8 @@ class Matcher:
         # Debug: Save images to disk for inspection
         try:
             from PIL import Image as PILImage
-            from pathlib import Path
-            debug_dir = Path("/tmp/matcher_debug")
-            debug_dir.mkdir(exist_ok=True)
+            debug_dir = self.debug_dir
+            debug_dir.mkdir(parents=True, exist_ok=True)
 
             # Save source image
             src_pil = PILImage.fromarray(image_src.astype('uint8'))

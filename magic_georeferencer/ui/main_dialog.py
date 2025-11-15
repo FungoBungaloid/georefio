@@ -173,6 +173,28 @@ class MagicGeoreferencerDialog(QDialog):
         )
         layout.addWidget(self.progressive_checkbox)
 
+        # Debug output directory
+        debug_layout = QVBoxLayout()
+        debug_label = QLabel("Debug Output Directory (images saved here for inspection):")
+        debug_layout.addWidget(debug_label)
+
+        debug_path_layout = QHBoxLayout()
+        self.debug_dir_edit = QLineEdit()
+        self.debug_dir_edit.setText(str(Path.home() / "georefio_debug"))
+        self.debug_dir_edit.setReadOnly(True)
+        debug_path_layout.addWidget(self.debug_dir_edit)
+
+        browse_debug_btn = QPushButton("Browse...")
+        browse_debug_btn.clicked.connect(self._browse_debug_dir)
+        debug_path_layout.addWidget(browse_debug_btn)
+
+        open_debug_btn = QPushButton("Open Folder")
+        open_debug_btn.clicked.connect(self._open_debug_dir)
+        debug_path_layout.addWidget(open_debug_btn)
+
+        debug_layout.addLayout(debug_path_layout)
+        layout.addLayout(debug_layout)
+
         group.setLayout(layout)
         return group
 
@@ -350,6 +372,43 @@ class MagicGeoreferencerDialog(QDialog):
             desc = self.tile_sources[source_key].get('description', '')
             self.basemap_desc_label.setText(f"9 {desc}")
 
+    def _browse_debug_dir(self):
+        """Browse for debug output directory"""
+        dir_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Debug Output Directory",
+            str(Path.home())
+        )
+
+        if dir_path:
+            self.debug_dir_edit.setText(dir_path)
+
+    def _open_debug_dir(self):
+        """Open the debug directory in file explorer"""
+        import subprocess
+        import platform
+
+        debug_dir = Path(self.debug_dir_edit.text())
+
+        # Create directory if it doesn't exist
+        debug_dir.mkdir(parents=True, exist_ok=True)
+
+        # Open in file explorer based on OS
+        system = platform.system()
+        try:
+            if system == "Windows":
+                subprocess.run(['explorer', str(debug_dir)])
+            elif system == "Darwin":  # macOS
+                subprocess.run(['open', str(debug_dir)])
+            else:  # Linux
+                subprocess.run(['xdg-open', str(debug_dir)])
+        except Exception as e:
+            QMessageBox.information(
+                self,
+                "Debug Directory",
+                f"Debug directory: {debug_dir}\n\nCouldn't open automatically: {e}"
+            )
+
     def _validate_inputs(self) -> Tuple[bool, str]:
         """Validate inputs before processing"""
         if self.source_image_path is None or not self.source_image_path.exists():
@@ -429,6 +488,9 @@ class MagicGeoreferencerDialog(QDialog):
                 zoom_range = 2  # Try base_zoom-2 to base_zoom+2 (5 zoom levels)
             else:
                 zoom_range = 1  # Try base_zoom-1 to base_zoom+1 (3 zoom levels)
+
+            # Set debug directory for matcher
+            self.matcher.debug_dir = Path(self.debug_dir_edit.text())
 
             # Run multi-zoom matching
             match_result, ref_image, ref_extent, best_zoom = self.matcher.match_multi_zoom(
