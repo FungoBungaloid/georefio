@@ -312,36 +312,48 @@ class MatchAnythingInference:
             print(f"  kp2 x: [{keypoints2[:, 0].min():.3f}, {keypoints2[:, 0].max():.3f}]")
             print(f"  kp2 y: [{keypoints2[:, 1].min():.3f}, {keypoints2[:, 1].max():.3f}]")
 
-            # Check if coordinates appear to be normalized (in range approximately -1 to 1)
-            if abs(keypoints1[:, 0].min()) < 2 and abs(keypoints1[:, 0].max()) < 2:
-                print("Debug: Keypoints appear to be in normalized coordinates [-1, 1]")
-                # Convert from normalized [-1, 1] to pixel coordinates [0, width/height]
-                # Formula: pixel = (normalized + 1) * (size / 2)
-                model_size = 832  # Model processes images at 832x832
+            # Determine coordinate system and convert to pixels
+            kp1_min_x, kp1_max_x = keypoints1[:, 0].min(), keypoints1[:, 0].max()
+            kp1_min_y, kp1_max_y = keypoints1[:, 1].min(), keypoints1[:, 1].max()
 
-                # Convert to pixel space in model coordinates first
+            model_size = 832  # Model processes images at 832x832
+
+            # Check if normalized [0, 1] vs [-1, 1] vs already pixels
+            if kp1_min_x >= -0.1 and kp1_max_x <= 1.1:
+                # Normalized coordinates in [0, 1] range
+                print("Debug: Keypoints appear to be in normalized coordinates [0, 1]")
+                # Convert from [0, 1] to pixel coordinates
+                # Formula: pixel = normalized * size
+                keypoints1[:, 0] = keypoints1[:, 0] * model_size
+                keypoints1[:, 1] = keypoints1[:, 1] * model_size
+                keypoints2[:, 0] = keypoints2[:, 0] * model_size
+                keypoints2[:, 1] = keypoints2[:, 1] * model_size
+
+                print(f"Debug: After [0,1] → pixel conversion:")
+                print(f"  kp1 x: [{keypoints1[:, 0].min():.1f}, {keypoints1[:, 0].max():.1f}]")
+                print(f"  kp1 y: [{keypoints1[:, 1].min():.1f}, {keypoints1[:, 1].max():.1f}]")
+
+            elif kp1_min_x >= -1.1 and kp1_max_x <= 1.1:
+                # Normalized coordinates in [-1, 1] range
+                print("Debug: Keypoints appear to be in normalized coordinates [-1, 1]")
+                # Convert from [-1, 1] to pixel coordinates
+                # Formula: pixel = (normalized + 1) * (size / 2)
                 keypoints1[:, 0] = (keypoints1[:, 0] + 1) * (model_size / 2)
                 keypoints1[:, 1] = (keypoints1[:, 1] + 1) * (model_size / 2)
                 keypoints2[:, 0] = (keypoints2[:, 0] + 1) * (model_size / 2)
                 keypoints2[:, 1] = (keypoints2[:, 1] + 1) * (model_size / 2)
 
-                print(f"Debug: After normalization conversion:")
+                print(f"Debug: After [-1,1] → pixel conversion:")
                 print(f"  kp1 x: [{keypoints1[:, 0].min():.1f}, {keypoints1[:, 0].max():.1f}]")
                 print(f"  kp1 y: [{keypoints1[:, 1].min():.1f}, {keypoints1[:, 1].max():.1f}]")
-
-                # Now scale from model size to original image size
-                scale_x1 = orig_w1 / model_size
-                scale_y1 = orig_h1 / model_size
-                scale_x2 = orig_w2 / model_size
-                scale_y2 = orig_h2 / model_size
             else:
-                print("Debug: Keypoints appear to be in pixel coordinates")
-                # Assume keypoints are in 832x832 space, scale directly
-                model_size = 832
-                scale_x1 = orig_w1 / model_size
-                scale_y1 = orig_h1 / model_size
-                scale_x2 = orig_w2 / model_size
-                scale_y2 = orig_h2 / model_size
+                print("Debug: Keypoints appear to already be in pixel coordinates")
+
+            # Now scale from model size to original image size
+            scale_x1 = orig_w1 / model_size
+            scale_y1 = orig_h1 / model_size
+            scale_x2 = orig_w2 / model_size
+            scale_y2 = orig_h2 / model_size
 
             keypoints1[:, 0] *= scale_x1
             keypoints1[:, 1] *= scale_y1
