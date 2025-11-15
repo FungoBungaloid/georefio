@@ -612,7 +612,7 @@ class MagicGeoreferencerDialog(QDialog):
                 self.source_image_path,
                 gcps,
                 output_path,
-                crs,
+                web_mercator_crs,  # Use the CRS we defined earlier
                 transform_type=transform_type,
                 resampling=self.settings['georeferencing']['default_resampling'],
                 compression=self.settings['georeferencing']['default_compression']
