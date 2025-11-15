@@ -162,6 +162,7 @@ class MagicGeoreferencerDialog(QDialog):
         self.quality_combo.addItem("Strict (0.85)", "strict")
         self.quality_combo.addItem("Balanced (0.70)", "balanced")
         self.quality_combo.addItem("Permissive (0.55)", "permissive")
+        self.quality_combo.addItem("Very Permissive (0.20) - for historical imagery", "very_permissive")
         self.quality_combo.setCurrentIndex(1)  # Default to Balanced
         quality_layout.addWidget(self.quality_combo)
         layout.addLayout(quality_layout)
@@ -452,15 +453,29 @@ class MagicGeoreferencerDialog(QDialog):
             # Check if we have enough matches
             if match_result.num_matches() < self.settings['matching']['min_gcps']:
                 progress.close()
+
+                # Build helpful error message
+                suggestions = [
+                    "- Try 'Very Permissive (0.20)' quality setting for historical imagery",
+                    "- Use a different basemap source (try both OSM and aerial imagery)",
+                    "- Zoom to an area with stable features (roads, coastlines, buildings)",
+                    "- Ensure you're viewing the correct geographic location",
+                ]
+
+                # Add specific advice based on match count
+                if match_result.num_matches() == 0:
+                    suggestions.insert(0, "- The images may be too different or location incorrect")
+                elif match_result.num_matches() < 4:
+                    suggestions.insert(0, "- Very few matches suggest challenging imagery (historical photos, major changes)")
+                    suggestions.append("- Consider preprocessing the historical image (contrast, rotation)")
+
                 QMessageBox.warning(
                     self,
                     "Insufficient Matches",
-                    f"Only {match_result.num_matches()} matches found.\n"
+                    f"Only {match_result.num_matches()} matches found "
+                    f"(confidence: {match_result.mean_confidence():.3f}).\n"
                     f"Minimum required: {self.settings['matching']['min_gcps']}\n\n"
-                    "Try:\n"
-                    "- Lowering the quality threshold\n"
-                    "- Using a different basemap source\n"
-                    "- Ensuring you're zoomed to the correct location"
+                    "Suggestions:\n" + "\n".join(suggestions)
                 )
                 return
 
