@@ -128,6 +128,7 @@ class MatchAnythingInference:
             keypoints1 = None
             keypoints2 = None
             confidence = None
+            match_indices_0 = None  # Track which keypoints were matched (for filtering confidence)
 
             # Debug: Check what keypoints actually is
             if hasattr(outputs, 'keypoints'):
@@ -155,31 +156,42 @@ class MatchAnythingInference:
                         print(f"Debug: Using matches tensor of shape {matches.shape}")
                         print(f"Debug: Sample matches values: {matches[0, :, :10]}")
 
-                        # matches[0, 0, :] are indices in image 0
-                        # matches[0, 1, :] are indices in image 1
-                        # Filter out invalid matches (typically -1 or very large numbers)
+                        # matches[0, 0, i] = j means keypoint i in image 0 matches to keypoint j in image 1
+                        # matches[0, 1, k] = i means keypoint k in image 1 matches to keypoint i in image 0
+                        # -1 means no match
 
-                        matches_0 = matches[0, 0].cpu().numpy()  # Indices in image 0
-                        matches_1 = matches[0, 1].cpu().numpy()  # Indices in image 1
+                        matches_0_to_1 = matches[0, 0].cpu().numpy()  # For each kp in img0, index in img1
+                        matches_1_to_0 = matches[0, 1].cpu().numpy()  # For each kp in img1, index in img0
 
-                        print(f"Debug: matches_0 range: {matches_0.min():.1f} to {matches_0.max():.1f}")
-                        print(f"Debug: matches_1 range: {matches_1.min():.1f} to {matches_1.max():.1f}")
+                        print(f"Debug: matches_0_to_1 range: {matches_0_to_1.min():.1f} to {matches_0_to_1.max():.1f}")
+                        print(f"Debug: matches_1_to_0 range: {matches_1_to_0.min():.1f} to {matches_1_to_0.max():.1f}")
 
-                        # Find valid matches (both indices are non-negative and within bounds)
-                        valid_mask = (matches_0 >= 0) & (matches_1 >= 0) & \
-                                    (matches_0 < len(keypoints1)) & (matches_1 < len(keypoints2))
+                        # Find valid matches from image 0 perspective
+                        # For each keypoint i in image 0, check if it has a valid match j in image 1
+                        valid_0_indices = []
+                        valid_1_indices = []
 
-                        valid_indices_0 = matches_0[valid_mask].astype(int)
-                        valid_indices_1 = matches_1[valid_mask].astype(int)
+                        for i in range(len(matches_0_to_1)):
+                            j = int(matches_0_to_1[i])
+                            # Check if this is a valid match
+                            if j >= 0 and j < len(keypoints2):
+                                valid_0_indices.append(i)
+                                valid_1_indices.append(j)
 
-                        print(f"Debug: Found {len(valid_indices_0)} valid matches out of {len(matches_0)}")
+                        print(f"Debug: Found {len(valid_0_indices)} valid matches out of {len(matches_0_to_1)}")
 
                         # Extract only the matched keypoints
-                        if len(valid_indices_0) > 0:
-                            keypoints1 = keypoints1[valid_indices_0]
-                            keypoints2 = keypoints2[valid_indices_1]
+                        if len(valid_0_indices) > 0:
+                            valid_0_indices = np.array(valid_0_indices)
+                            valid_1_indices = np.array(valid_1_indices)
+                            keypoints1 = keypoints1[valid_0_indices]
+                            keypoints2 = keypoints2[valid_1_indices]
+
+                            # Also store the indices for filtering confidence later
+                            match_indices_0 = valid_0_indices
                             print(f"✓ Filtered to {len(keypoints1)} matched keypoint pairs")
                         else:
+                            match_indices_0 = None
                             print("⚠ No valid matches found!")
 
                 elif len(kp.shape) == 3 and kp.shape[0] == 2:
@@ -231,20 +243,48 @@ class MatchAnythingInference:
             if keypoints1 is not None:
                 if hasattr(outputs, 'confidence'):
                     confidence = outputs.confidence.cpu().numpy()
-                    print(f"✓ Using model confidence scores")
+                    print(f"Debug: confidence shape from outputs.confidence: {confidence.shape}")
                 elif hasattr(outputs, 'matching_scores'):
                     confidence = outputs.matching_scores.cpu().numpy()
-                    print(f"✓ Using matching scores as confidence")
+                    print(f"Debug: confidence shape from matching_scores: {confidence.shape}")
                 elif hasattr(outputs, 'scores'):
                     confidence = outputs.scores.cpu().numpy()
-                    print(f"✓ Using scores as confidence")
+                    print(f"Debug: confidence shape from scores: {confidence.shape}")
                 elif isinstance(outputs, dict) and 'confidence' in outputs:
                     confidence = outputs['confidence'].cpu().numpy()
-                    print(f"✓ Using dict confidence scores")
+                    print(f"Debug: confidence shape from dict: {confidence.shape}")
+                else:
+                    confidence = None
+
+                # Process confidence to match keypoints length
+                if confidence is not None:
+                    # If confidence is 3D like [1, 2, N], extract and filter
+                    if len(confidence.shape) == 3:
+                        print(f"Debug: Reshaping 3D confidence tensor")
+                        # Extract confidence for image 0 matches: [1, 0, :]
+                        confidence = confidence[0, 0, :]  # Take first batch, first image
+                        print(f"Debug: confidence shape after extraction: {confidence.shape}")
+
+                    # If we filtered matches, also filter confidence
+                    if 'match_indices_0' in locals() and match_indices_0 is not None:
+                        confidence = confidence[match_indices_0]
+                        print(f"✓ Filtered confidence to {len(confidence)} values matching keypoints")
+
+                    # Ensure confidence matches keypoints length
+                    if len(confidence) != len(keypoints1):
+                        print(f"⚠ Confidence length {len(confidence)} doesn't match keypoints {len(keypoints1)}")
+                        # Truncate or pad to match
+                        if len(confidence) > len(keypoints1):
+                            confidence = confidence[:len(keypoints1)]
+                        else:
+                            # Pad with default values
+                            padding = np.ones(len(keypoints1) - len(confidence)) * 0.8
+                            confidence = np.concatenate([confidence, padding])
+                        print(f"  Adjusted confidence to {len(confidence)} values")
                 else:
                     # Default to uniform confidence
                     confidence = np.ones(len(keypoints1)) * 0.8
-                    print(f"⚠ No confidence scores found, using default 0.8")
+                    print(f"⚠ No confidence scores found, using default 0.8 for {len(keypoints1)} matches")
 
             # If still no keypoints, fail gracefully
             if keypoints1 is None:
