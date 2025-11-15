@@ -61,11 +61,6 @@ class Georeferencer:
             return False, f"Source image not found: {source_image_path}"
 
         try:
-            # Create temporary GCP file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.points', delete=False) as f:
-                gcp_file = Path(f.name)
-                self._write_gcp_file(gcps, f, target_crs)
-
             # Map transform type to GDAL order
             transform_order_map = {
                 'polynomial_1': 1,
@@ -86,8 +81,63 @@ class Georeferencer:
             }
             resampling_method = resampling_map.get(resampling, 'cubic')
 
-            # Build GDAL command
-            cmd = [
+            # Step 1: Use gdal_translate to add GCPs to the source image
+            # Create a temporary VRT file with GCPs
+            temp_vrt = tempfile.NamedTemporaryFile(mode='w', suffix='.vrt', delete=False)
+            temp_vrt_path = Path(temp_vrt.name)
+            temp_vrt.close()
+
+            # Build gdal_translate command with GCPs
+            translate_cmd = ['gdal_translate']
+
+            # Add GCP points
+            for gcp in gcps:
+                pixel_x, pixel_y, map_x, map_y = self._extract_gcp_coords(gcp)
+                translate_cmd.extend(['-gcp', str(pixel_x), str(pixel_y), str(map_x), str(map_y)])
+
+            # Add target CRS
+            translate_cmd.extend(['-a_srs', target_crs.authid()])
+
+            # Output as VRT (virtual format, fast)
+            translate_cmd.extend(['-of', 'VRT'])
+
+            # Add input and output
+            translate_cmd.extend([str(source_image_path), str(temp_vrt_path)])
+
+            print("\n" + "="*80)
+            print("STEP 1: Adding GCPs with gdal_translate")
+            print("="*80)
+            print(f"Command: {' '.join(translate_cmd[:10])}...")
+            print(f"GCPs: {len(gcps)}")
+            print(f"Output VRT: {temp_vrt_path}")
+            print("="*80 + "\n")
+
+            # Execute gdal_translate
+            result1 = subprocess.run(
+                translate_cmd,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+
+            print(f"gdal_translate return code: {result1.returncode}")
+            if result1.stdout:
+                print(f"gdal_translate stdout: {result1.stdout}")
+            if result1.stderr:
+                print(f"gdal_translate stderr: {result1.stderr}")
+
+            if result1.returncode != 0:
+                if temp_vrt_path.exists():
+                    temp_vrt_path.unlink()
+                error_msg = f"gdal_translate error (return code {result1.returncode}):\n{result1.stderr}"
+                if "not recognized" in result1.stderr or "not found" in result1.stderr:
+                    error_msg += "\n\nNote: gdal_translate may not be in your system PATH. " \
+                                "Please ensure GDAL is installed and accessible from QGIS."
+                return False, error_msg
+
+            # Step 2: Use gdalwarp to warp the VRT with GCPs to final output
+            # Build gdalwarp command
+            warp_cmd = [
                 'gdalwarp',
                 '-r', resampling_method,
                 '-co', f'COMPRESS={compression}',
@@ -96,51 +146,46 @@ class Georeferencer:
 
             # Add transformation type
             if order == -1:
-                cmd.extend(['-tps'])  # Thin plate spline
+                warp_cmd.extend(['-tps'])  # Thin plate spline
             else:
-                cmd.extend(['-order', str(order)])
+                warp_cmd.extend(['-order', str(order)])
 
-            # Add GCP points directly (alternative to GCP file)
-            for gcp in gcps:
-                pixel_x, pixel_y, map_x, map_y = self._extract_gcp_coords(gcp)
-                cmd.extend(['-gcp', str(pixel_x), str(pixel_y), str(map_x), str(map_y)])
+            # Add input VRT and output
+            warp_cmd.extend([str(temp_vrt_path), str(output_path)])
 
-            # Add input and output
-            cmd.extend([str(source_image_path), str(output_path)])
-
-            # Debug: Print the command
             print("\n" + "="*80)
-            print("GEOREFERENCING COMMAND:")
+            print("STEP 2: Warping with gdalwarp")
             print("="*80)
-            print(f"Command: {' '.join(cmd[:10])}...")
-            print(f"GCPs: {len(gcps)}")
-            print(f"Source: {source_image_path}")
+            print(f"Command: {' '.join(warp_cmd[:10])}...")
+            print(f"Transform type: {transform_type} (order={order})")
+            print(f"Resampling: {resampling_method}")
+            print(f"Source VRT: {temp_vrt_path}")
             print(f"Output: {output_path}")
             print(f"CRS: {target_crs.authid()}")
             print("="*80 + "\n")
 
-            # Execute command
-            result = subprocess.run(
-                cmd,
+            # Execute gdalwarp
+            result2 = subprocess.run(
+                warp_cmd,
                 capture_output=True,
                 text=True,
                 timeout=300  # 5 minutes timeout
             )
 
-            # Cleanup temp file
-            if gcp_file.exists():
-                gcp_file.unlink()
+            # Cleanup temp VRT
+            if temp_vrt_path.exists():
+                temp_vrt_path.unlink()
 
             # Debug: Print result
-            print(f"GDAL return code: {result.returncode}")
-            if result.stdout:
-                print(f"GDAL stdout: {result.stdout}")
-            if result.stderr:
-                print(f"GDAL stderr: {result.stderr}")
+            print(f"gdalwarp return code: {result2.returncode}")
+            if result2.stdout:
+                print(f"gdalwarp stdout: {result2.stdout}")
+            if result2.stderr:
+                print(f"gdalwarp stderr: {result2.stderr}")
 
-            if result.returncode != 0:
-                error_msg = f"GDAL error (return code {result.returncode}):\n{result.stderr}"
-                if "not recognized" in result.stderr or "not found" in result.stderr:
+            if result2.returncode != 0:
+                error_msg = f"gdalwarp error (return code {result2.returncode}):\n{result2.stderr}"
+                if "not recognized" in result2.stderr or "not found" in result2.stderr:
                     error_msg += "\n\nNote: gdalwarp may not be in your system PATH. " \
                                 "Please ensure GDAL is installed and accessible from QGIS."
                 return False, error_msg
