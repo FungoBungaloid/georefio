@@ -113,18 +113,17 @@ class MagicGeoreferencerDialog(QDialog):
 
     def _create_map_position_group(self) -> QGroupBox:
         """Create map positioning group"""
-        group = QGroupBox("2. Position Map Canvas")
+        group = QGroupBox("2. Align Map View")
         layout = QVBoxLayout()
-
-        # Overlay preview checkbox
-        self.overlay_preview_checkbox = QCheckBox("Show image overlay preview")
-        self.overlay_preview_checkbox.setEnabled(False)  # TODO: Implement overlay
-        layout.addWidget(self.overlay_preview_checkbox)
 
         # Instructions
         info_label = QLabel(
-            "9 Navigate the map to the approximate location of your image.\n"
-            "The visible map extent will be used for matching."
+            "You will be guided to align your map view with the source image.\n\n"
+            "The plugin will show an alignment dialog where you can:\n"
+            "• Center the map on your image location\n"
+            "• Match the scale by adjusting zoom\n"
+            "• Choose which dimension (horizontal/vertical) to match\n\n"
+            "The plugin will then automatically find the best zoom level for matching."
         )
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -373,11 +372,27 @@ class MagicGeoreferencerDialog(QDialog):
             QMessageBox.warning(self, "Validation Error", error_msg)
             return
 
+        # Step 1: Show alignment dialog
+        from .alignment_dialog import AlignmentDialog
+
+        alignment_dialog = AlignmentDialog(self.source_image_path, self.iface, self)
+        alignment_info = alignment_dialog.get_alignment_info()
+
+        if alignment_info is None:
+            # User cancelled
+            return
+
+        center_lat, center_lon, extent_meters, extent_dimension = alignment_info
+
+        print(f"\nAlignment info:")
+        print(f"  Center: {center_lat:.6f}, {center_lon:.6f}")
+        print(f"  Extent: {extent_meters:.0f} meters ({extent_dimension})")
+
         # Create progress dialog
         progress = ProgressDialog(self, "Magic Georeferencer")
 
         try:
-            # Step 1: Load source image
+            # Step 2: Load source image
             progress.set_status("Loading source image...")
             progress.set_progress(0, 100)
             progress.show()
@@ -390,54 +405,45 @@ class MagicGeoreferencerDialog(QDialog):
 
             progress.set_progress(10, 100)
 
-            # Step 2: Capture map canvas or fetch tiles
-            progress.set_status("Capturing basemap...")
+            # Step 3: Calculate optimal zoom level
+            progress.set_status("Calculating optimal zoom level...")
 
             tile_fetcher = TileFetcher()
+            base_zoom = tile_fetcher.calculate_optimal_zoom(extent_meters, target_pixels=832)
+
+            print(f"Calculated base zoom level: {base_zoom}")
+
+            progress.set_progress(15, 100)
+
+            # Step 4: Run multi-zoom matching
+            progress.set_status("Running AI matching at multiple zoom levels...")
+
             basemap_source = self.basemap_combo.currentData()
-
-            # Get current canvas extent and CRS
-            canvas = self.iface.mapCanvas()
-            extent = canvas.extent()
-            crs = canvas.mapSettings().destinationCrs()
-
-            # Capture canvas
-            try:
-                ref_image, ref_extent = tile_fetcher.capture_canvas(self.iface, size=1024)
-            except Exception as e:
-                # Fallback to tile fetching
-                print(f"Canvas capture failed: {e}, falling back to tile fetching")
-                zoom_level = self.settings['tile_fetching']['default_zoom_level']
-                ref_image, ref_extent = tile_fetcher.fetch_tiles(
-                    extent, crs, basemap_source, zoom_level, size=1024
-                )
-
-            ref_image_size = (ref_image.shape[1], ref_image.shape[0])
-
-            progress.set_progress(30, 100)
-
-            # Step 3: Run matching
-            progress.set_status("Running AI matching...")
 
             # Get quality threshold
             quality_preset = self.quality_combo.currentData()
             confidence_threshold = self.settings['matching']['confidence_thresholds'][quality_preset]
 
-            # Configure progressive refinement
-            use_progressive = self.progressive_checkbox.isChecked()
-
-            if use_progressive:
-                scales = self.settings['matching']['progressive_scales']
-                match_result = self.matcher.match_progressive(
-                    src_image, ref_image,
-                    scales=scales,
-                    min_gcps=self.settings['matching']['min_gcps']
-                )
+            # Determine zoom range based on progressive setting
+            if self.progressive_checkbox.isChecked():
+                zoom_range = 2  # Try base_zoom-2 to base_zoom+2 (5 zoom levels)
             else:
-                match_result = self.matcher.match_single_scale(
-                    src_image, ref_image,
-                    size=self.matcher.config['size']
-                )
+                zoom_range = 1  # Try base_zoom-1 to base_zoom+1 (3 zoom levels)
+
+            # Run multi-zoom matching
+            match_result, ref_image, ref_extent, best_zoom = self.matcher.match_multi_zoom(
+                image_src=src_image,
+                center_lat=center_lat,
+                center_lon=center_lon,
+                extent_meters=extent_meters,
+                extent_dimension=extent_dimension,
+                tile_fetcher=tile_fetcher,
+                basemap_source=basemap_source,
+                base_zoom=base_zoom,
+                zoom_range=zoom_range
+            )
+
+            ref_image_size = (ref_image.shape[1], ref_image.shape[0])
 
             progress.set_progress(60, 100)
 
@@ -484,11 +490,14 @@ class MagicGeoreferencerDialog(QDialog):
             # Step 5: Generate GCPs
             progress.set_status("Generating Ground Control Points...")
 
+            # ref_extent is in EPSG:3857 (Web Mercator)
+            web_mercator_crs = QgsCoordinateReferenceSystem('EPSG:3857')
+
             gcp_generator = GCPGenerator()
             gcps = gcp_generator.matches_to_gcps(
                 match_result,
                 ref_extent,
-                crs,
+                web_mercator_crs,
                 ref_image_size,
                 src_image_size
             )

@@ -109,6 +109,77 @@ class TileFetcher:
 
         return image_array, extent
 
+    def fetch_tiles_from_center(
+        self,
+        center_lat: float,
+        center_lon: float,
+        extent_meters: float,
+        extent_dimension: str,
+        source_aspect_ratio: float,
+        source_name: str,
+        zoom_level: int,
+        target_size: int = 832
+    ) -> Tuple[np.ndarray, QgsRectangle]:
+        """
+        Fetch tiles based on center point and one extent dimension.
+
+        This is the new preferred method that doesn't depend on UI dimensions.
+
+        Args:
+            center_lat: Center latitude (WGS84)
+            center_lon: Center longitude (WGS84)
+            extent_meters: Extent in meters (width or height depending on extent_dimension)
+            extent_dimension: 'horizontal' or 'vertical'
+            source_aspect_ratio: Aspect ratio of source image (width/height)
+            source_name: Tile source key
+            zoom_level: Zoom level to fetch
+            target_size: Target output image size (will be square)
+
+        Returns:
+            Tuple of (image_array, extent_rectangle):
+            - image_array: RGB numpy array [H, W, 3]
+            - extent_rectangle: QgsRectangle in EPSG:3857
+        """
+        # Convert center point to EPSG:3857
+        from qgis.core import QgsPointXY
+
+        wgs84 = QgsCoordinateReferenceSystem('EPSG:4326')
+        web_mercator = QgsCoordinateReferenceSystem('EPSG:3857')
+        transform = QgsCoordinateTransform(wgs84, web_mercator, QgsProject.instance())
+
+        center_point = QgsPointXY(center_lon, center_lat)
+        center_3857 = transform.transform(center_point)
+
+        # Calculate extent based on the specified dimension and source aspect ratio
+        if extent_dimension == 'horizontal':
+            # User matched horizontal extent
+            width_meters = extent_meters
+            height_meters = width_meters / source_aspect_ratio
+        else:
+            # User matched vertical extent
+            height_meters = extent_meters
+            width_meters = height_meters * source_aspect_ratio
+
+        # Create extent rectangle centered on the point
+        half_width = width_meters / 2
+        half_height = height_meters / 2
+
+        extent = QgsRectangle(
+            center_3857.x() - half_width,
+            center_3857.y() - half_height,
+            center_3857.x() + half_width,
+            center_3857.y() + half_height
+        )
+
+        print(f"Fetching tiles for:")
+        print(f"  Center: {center_lat:.6f}, {center_lon:.6f}")
+        print(f"  Extent: {width_meters:.0f}m × {height_meters:.0f}m")
+        print(f"  Zoom: {zoom_level}")
+        print(f"  Aspect ratio: {source_aspect_ratio:.3f}")
+
+        # Fetch tiles for this extent
+        return self.fetch_tiles(extent, web_mercator, source_name, zoom_level, target_size)
+
     def fetch_tiles(
         self,
         extent: QgsRectangle,
@@ -165,6 +236,38 @@ class TileFetcher:
         stitched_resized = self._resize_image(stitched_image, size)
 
         return stitched_resized, tile_extent
+
+    def calculate_optimal_zoom(
+        self,
+        extent_meters: float,
+        target_pixels: int = 832
+    ) -> int:
+        """
+        Calculate optimal zoom level for given extent and target image size.
+
+        Args:
+            extent_meters: Extent in meters (width or height)
+            target_pixels: Target image size in pixels
+
+        Returns:
+            Optimal zoom level (0-19)
+        """
+        # At zoom level z, one tile (256px) covers (earth_circumference / 2^z) meters
+        earth_circumference = 40075016.686  # meters
+
+        # We want extent_meters to map to approximately target_pixels
+        # meters_per_pixel = extent_meters / target_pixels
+        meters_per_pixel = extent_meters / target_pixels
+
+        # At zoom z: meters_per_pixel_at_zoom = earth_circumference / (256 * 2^z)
+        # Solve for z: 2^z = earth_circumference / (256 * meters_per_pixel)
+        tiles_needed = earth_circumference / (256 * meters_per_pixel)
+        zoom = math.log2(tiles_needed)
+
+        # Clamp to valid range and round
+        zoom = max(0, min(19, round(zoom)))
+
+        return int(zoom)
 
     def get_tile_url(self, source_name: str, x: int, y: int, z: int) -> str:
         """Generate tile URL for given TMS coordinates.
