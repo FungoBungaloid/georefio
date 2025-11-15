@@ -61,6 +61,34 @@ class TileFetcher:
         # Cache expiry (7 days minimum per OSM policy)
         self.cache_expiry_days = 7
 
+        # Rate limiting for OSM tile servers (be respectful!)
+        self.last_request_time = 0
+        self.min_request_interval = 0.05  # 50ms minimum between requests (max 20 req/sec)
+
+    def clear_cache(self, source_name: Optional[str] = None):
+        """
+        Clear tile cache.
+
+        Args:
+            source_name: If specified, only clear cache for this source.
+                        If None, clear all cached tiles.
+        """
+        if source_name:
+            # Clear cache for specific source
+            pattern = f"{self.tile_sources[source_name]['name']}_*.png"
+            for cache_file in self.cache_dir.glob(pattern):
+                cache_file.unlink()
+            for cache_file in self.cache_dir.glob(pattern.replace('.png', '.meta')):
+                cache_file.unlink()
+            print(f"Cleared cache for {source_name}")
+        else:
+            # Clear all cache
+            for cache_file in self.cache_dir.glob("*.png"):
+                cache_file.unlink()
+            for cache_file in self.cache_dir.glob("*.meta"):
+                cache_file.unlink()
+            print("Cleared all tile cache")
+
     def capture_canvas(
         self,
         iface,
@@ -408,6 +436,13 @@ class TileFetcher:
         ], x, y, z)
 
         try:
+            # Rate limiting (especially important for OSM)
+            current_time = time.time()
+            time_since_last = current_time - self.last_request_time
+            if time_since_last < self.min_request_interval:
+                time.sleep(self.min_request_interval - time_since_last)
+            self.last_request_time = time.time()
+
             # Use session with proper User-Agent
             response = self.session.get(url, headers=headers, timeout=10)
 
