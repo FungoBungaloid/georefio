@@ -108,6 +108,17 @@ class Georeferencer:
             # Add input and output
             cmd.extend([str(source_image_path), str(output_path)])
 
+            # Debug: Print the command
+            print("\n" + "="*80)
+            print("GEOREFERENCING COMMAND:")
+            print("="*80)
+            print(f"Command: {' '.join(cmd[:10])}...")
+            print(f"GCPs: {len(gcps)}")
+            print(f"Source: {source_image_path}")
+            print(f"Output: {output_path}")
+            print(f"CRS: {target_crs.authid()}")
+            print("="*80 + "\n")
+
             # Execute command
             result = subprocess.run(
                 cmd,
@@ -120,19 +131,46 @@ class Georeferencer:
             if gcp_file.exists():
                 gcp_file.unlink()
 
+            # Debug: Print result
+            print(f"GDAL return code: {result.returncode}")
+            if result.stdout:
+                print(f"GDAL stdout: {result.stdout}")
+            if result.stderr:
+                print(f"GDAL stderr: {result.stderr}")
+
             if result.returncode != 0:
-                return False, f"GDAL error: {result.stderr}"
+                error_msg = f"GDAL error (return code {result.returncode}):\n{result.stderr}"
+                if "not recognized" in result.stderr or "not found" in result.stderr:
+                    error_msg += "\n\nNote: gdalwarp may not be in your system PATH. " \
+                                "Please ensure GDAL is installed and accessible from QGIS."
+                return False, error_msg
+
+            # Check if output file was created
+            if not output_path.exists():
+                return False, f"Output file was not created: {output_path}"
+
+            print(f"✓ Georeferencing complete, output file created: {output_path}")
 
             # Load result into QGIS if interface available
-            if self.iface is not None and output_path.exists():
-                self.load_raster(output_path)
+            if self.iface is not None:
+                print(f"Loading georeferenced raster into QGIS...")
+                load_success = self.load_raster(output_path)
+                if load_success:
+                    print(f"✓ Raster loaded successfully into QGIS")
+                else:
+                    print(f"⚠ Failed to load raster into QGIS (but file was created)")
 
             return True, "Georeferencing completed successfully"
 
         except subprocess.TimeoutExpired:
             return False, "Georeferencing timed out (> 5 minutes)"
+        except FileNotFoundError as e:
+            return False, f"gdalwarp not found. Please ensure GDAL is installed and in your PATH.\n\nError: {str(e)}"
         except Exception as e:
-            return False, f"Georeferencing failed: {str(e)}"
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Georeferencing exception:\n{error_details}")
+            return False, f"Georeferencing failed: {str(e)}\n\nSee QGIS Python console for details."
 
     def calculate_transform_error(
         self,
