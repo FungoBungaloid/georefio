@@ -437,9 +437,31 @@ class TileFetcher:
             y_start = row * tile_size
             x_start = col * tile_size
 
-            # Handle different tile sizes
-            h, w = tile_img.shape[:2]
-            output_image[y_start:y_start+h, x_start:x_start+w] = tile_img[:, :, :3]
+            # Handle different tile formats (grayscale, RGB, RGBA)
+            if len(tile_img.shape) == 2:
+                # Grayscale - convert to RGB
+                h, w = tile_img.shape
+                tile_rgb = np.stack([tile_img, tile_img, tile_img], axis=-1)
+            elif len(tile_img.shape) == 3:
+                h, w = tile_img.shape[:2]
+                if tile_img.shape[2] == 4:
+                    # RGBA - drop alpha channel
+                    tile_rgb = tile_img[:, :, :3]
+                elif tile_img.shape[2] == 3:
+                    # RGB - use as is
+                    tile_rgb = tile_img
+                elif tile_img.shape[2] == 1:
+                    # Single channel - convert to RGB
+                    tile_rgb = np.repeat(tile_img, 3, axis=2)
+                else:
+                    # Unknown format - skip this tile
+                    print(f"Warning: Unexpected tile format with {tile_img.shape[2]} channels, skipping")
+                    continue
+            else:
+                print(f"Warning: Unexpected tile shape {tile_img.shape}, skipping")
+                continue
+
+            output_image[y_start:y_start+h, x_start:x_start+w] = tile_rgb
 
         # Calculate extent
         WORLD_MERCATOR_MIN = -20037508.342789244
