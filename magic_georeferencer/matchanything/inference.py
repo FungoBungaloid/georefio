@@ -137,19 +137,56 @@ class MatchAnythingInference:
                 if kp is not None and hasattr(kp, 'shape'):
                     print(f"Debug: outputs.keypoints shape: {kp.shape}")
 
-            # Method 1: Try dict-like access for KeypointMatchingOutput
+            # Method 1: Handle 4D tensor format [batch, 2, N, 2]
             if hasattr(outputs, 'keypoints') and outputs.keypoints is not None and hasattr(outputs.keypoints, 'shape'):
-                # keypoints is a tensor, check its shape
                 kp = outputs.keypoints
                 print(f"Debug: keypoints shape: {kp.shape}")
-                if len(kp.shape) == 3 and kp.shape[0] == 2:
-                    # Shape is [2, N, 2] - first dim is image index
+
+                if len(kp.shape) == 4 and kp.shape[0] == 1 and kp.shape[1] == 2:
+                    # Shape is [1, 2, N, 2] - batch, image_index, num_keypoints, xy
+                    # Remove batch dimension [0] and extract both images
+                    keypoints1 = kp[0, 0].cpu().numpy()  # First image
+                    keypoints2 = kp[0, 1].cpu().numpy()  # Second image
+                    print(f"✓ Extracted keypoints from outputs.keypoints tensor [1,2,N,2]: {len(keypoints1)} keypoints per image")
+
+                    # Now use matches to get the actual matched pairs
+                    if hasattr(outputs, 'matches'):
+                        matches = outputs.matches  # Shape: [1, 2, N]
+                        print(f"Debug: Using matches tensor of shape {matches.shape}")
+                        print(f"Debug: Sample matches values: {matches[0, :, :10]}")
+
+                        # matches[0, 0, :] are indices in image 0
+                        # matches[0, 1, :] are indices in image 1
+                        # Filter out invalid matches (typically -1 or very large numbers)
+
+                        matches_0 = matches[0, 0].cpu().numpy()  # Indices in image 0
+                        matches_1 = matches[0, 1].cpu().numpy()  # Indices in image 1
+
+                        print(f"Debug: matches_0 range: {matches_0.min():.1f} to {matches_0.max():.1f}")
+                        print(f"Debug: matches_1 range: {matches_1.min():.1f} to {matches_1.max():.1f}")
+
+                        # Find valid matches (both indices are non-negative and within bounds)
+                        valid_mask = (matches_0 >= 0) & (matches_1 >= 0) & \
+                                    (matches_0 < len(keypoints1)) & (matches_1 < len(keypoints2))
+
+                        valid_indices_0 = matches_0[valid_mask].astype(int)
+                        valid_indices_1 = matches_1[valid_mask].astype(int)
+
+                        print(f"Debug: Found {len(valid_indices_0)} valid matches out of {len(matches_0)}")
+
+                        # Extract only the matched keypoints
+                        if len(valid_indices_0) > 0:
+                            keypoints1 = keypoints1[valid_indices_0]
+                            keypoints2 = keypoints2[valid_indices_1]
+                            print(f"✓ Filtered to {len(keypoints1)} matched keypoint pairs")
+                        else:
+                            print("⚠ No valid matches found!")
+
+                elif len(kp.shape) == 3 and kp.shape[0] == 2:
+                    # Shape is [2, N, 2] - image_index, num_keypoints, xy (no batch dim)
                     keypoints1 = kp[0].cpu().numpy()
                     keypoints2 = kp[1].cpu().numpy()
                     print(f"✓ Extracted keypoints from outputs.keypoints tensor [2,N,2]: {len(keypoints1)} matches")
-                elif len(kp.shape) == 2:
-                    # Might need to use matches to split them
-                    print(f"Debug: keypoints is 2D tensor, checking matches attribute")
 
             # Method 2: Try accessing as dict items (KeypointMatchingOutput is dict-like)
             if keypoints1 is None and hasattr(outputs, 'items'):
