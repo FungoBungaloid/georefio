@@ -269,7 +269,9 @@ def fetch_tiles_at_zoom(extent_3857, zoom, output_path):
             url = tile_url_template.format(z=zoom, x=x, y=y)
 
             try:
-                response = requests.get(url, headers={'User-Agent': 'QGIS Magic Georeferencer'})
+                response = requests.get(url, headers={
+                    'User-Agent': 'MagicGeoreferencer/1.0 (+https://github.com/FungoBungaloid/georefio; QGIS Plugin for AI-powered georeferencing)'
+                })
                 response.raise_for_status()
                 tile_img = Image.open(BytesIO(response.content))
 
