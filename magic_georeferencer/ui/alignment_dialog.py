@@ -160,6 +160,18 @@ class AlignmentDialog(QDialog):
         # Initial map info
         self._update_map_info()
 
+        # Attribution note
+        attribution_label = QLabel(
+            '<p style="color: #666; font-size: 10pt; margin-top: 15px;">'
+            '<b>Note:</b> When using OpenStreetMap tiles, please ensure proper attribution '
+            '(© OpenStreetMap contributors) is included in any published work. '
+            'See <a href="https://www.openstreetmap.org/copyright">osmorg/copyright</a> for details.'
+            '</p>'
+        )
+        attribution_label.setWordWrap(True)
+        attribution_label.setOpenExternalLinks(True)
+        layout.addWidget(attribution_label)
+
         # Buttons
         button_layout = QHBoxLayout()
 

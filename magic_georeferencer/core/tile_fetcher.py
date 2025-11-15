@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Tuple, List, Optional
 from io import BytesIO
 from PIL import Image
+from datetime import datetime, timedelta
+import time
 
 try:
     from qgis.core import (
@@ -48,6 +50,16 @@ class TileFetcher:
 
         self.cache_dir = cache_base / 'magic_georeferencer' / 'tiles'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create requests session with proper headers for OSM tile usage policy
+        # See: https://operations.osmfoundation.org/policies/tiles/
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'MagicGeoreferencer/1.0 (+https://github.com/FungoBungaloid/georefio; QGIS Plugin for AI-powered georeferencing)',
+        })
+
+        # Cache expiry (7 days minimum per OSM policy)
+        self.cache_expiry_days = 7
 
     def capture_canvas(
         self,
@@ -363,10 +375,30 @@ class TileFetcher:
         """
         # Check cache first
         cache_file = self.cache_dir / f"{source['name']}_{z}_{x}_{y}.png"
+        cache_meta_file = self.cache_dir / f"{source['name']}_{z}_{x}_{y}.meta"
+
+        # Check if we have a valid cached tile
         if cache_file.exists():
+            # Check cache age (OSM policy: minimum 7 days)
+            cache_age = datetime.now() - datetime.fromtimestamp(cache_file.stat().st_mtime)
+            if cache_age < timedelta(days=self.cache_expiry_days):
+                # Cache is fresh, use it
+                try:
+                    img = Image.open(cache_file)
+                    return np.array(img)
+                except:
+                    pass
+
+        # Prepare headers for conditional request if we have cached metadata
+        headers = {}
+        if cache_meta_file.exists():
             try:
-                img = Image.open(cache_file)
-                return np.array(img)
+                with open(cache_meta_file, 'r') as f:
+                    meta = json.load(f)
+                    if 'etag' in meta:
+                        headers['If-None-Match'] = meta['etag']
+                    if 'last-modified' in meta:
+                        headers['If-Modified-Since'] = meta['last-modified']
             except:
                 pass
 
@@ -376,7 +408,20 @@ class TileFetcher:
         ], x, y, z)
 
         try:
-            response = requests.get(url, timeout=10)
+            # Use session with proper User-Agent
+            response = self.session.get(url, headers=headers, timeout=10)
+
+            # If 304 Not Modified, use cached version
+            if response.status_code == 304:
+                if cache_file.exists():
+                    try:
+                        # Update cache file timestamp
+                        cache_file.touch()
+                        img = Image.open(cache_file)
+                        return np.array(img)
+                    except:
+                        pass
+
             response.raise_for_status()
 
             img = Image.open(BytesIO(response.content))
@@ -385,13 +430,31 @@ class TileFetcher:
             # Cache the tile
             try:
                 img.save(cache_file)
-            except:
-                pass
+
+                # Save cache metadata (ETag, Last-Modified for future conditional requests)
+                meta = {}
+                if 'etag' in response.headers:
+                    meta['etag'] = response.headers['etag']
+                if 'last-modified' in response.headers:
+                    meta['last-modified'] = response.headers['last-modified']
+                if meta:
+                    with open(cache_meta_file, 'w') as f:
+                        json.dump(meta, f)
+            except Exception as e:
+                print(f"Failed to cache tile: {e}")
 
             return img_array
 
         except Exception as e:
             print(f"Failed to fetch tile {x},{y},{z}: {e}")
+            # If fetch failed but we have a stale cache, use it anyway
+            if cache_file.exists():
+                try:
+                    print(f"Using stale cache for tile {x},{y},{z}")
+                    img = Image.open(cache_file)
+                    return np.array(img)
+                except:
+                    pass
             return None
 
     def _stitch_tiles(
