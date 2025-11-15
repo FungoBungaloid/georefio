@@ -271,9 +271,19 @@ class Matcher:
         """
         start_time = time.time()
 
+        # Debug: Check input images
+        print(f"Debug match_single_scale:")
+        print(f"  image_src shape: {image_src.shape}, dtype: {image_src.dtype}, range: [{image_src.min()}, {image_src.max()}]")
+        print(f"  image_ref shape: {image_ref.shape}, dtype: {image_ref.dtype}, range: [{image_ref.min()}, {image_ref.max()}]")
+
         # Resize images to target size
         img_src_resized, scale_src = self.model.resize_image(image_src, size)
         img_ref_resized, scale_ref = self.model.resize_image(image_ref, size)
+
+        # Debug: Check resized images
+        print(f"  After resize:")
+        print(f"  img_src_resized shape: {img_src_resized.shape}, dtype: {img_src_resized.dtype}, range: [{img_src_resized.min()}, {img_src_resized.max()}]")
+        print(f"  img_ref_resized shape: {img_ref_resized.shape}, dtype: {img_ref_resized.dtype}, range: [{img_ref_resized.min()}, {img_ref_resized.max()}]")
 
         # Run MatchAnything inference
         keypoints_src_scaled, keypoints_ref_scaled, confidence = self.model.match_images(
