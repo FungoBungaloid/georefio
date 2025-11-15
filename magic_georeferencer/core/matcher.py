@@ -129,6 +129,130 @@ class Matcher:
 
         return best_result
 
+    def match_multi_zoom(
+        self,
+        image_src: np.ndarray,
+        center_lat: float,
+        center_lon: float,
+        extent_meters: float,
+        extent_dimension: str,
+        tile_fetcher,
+        basemap_source: str,
+        base_zoom: int,
+        zoom_range: int = 2
+    ) -> Tuple[MatchResult, np.ndarray, 'QgsRectangle', int]:
+        """
+        Try matching at multiple zoom levels and return the best result.
+
+        Args:
+            image_src: Source (ungeoreferenced) image [H, W, 3]
+            center_lat: Center latitude
+            center_lon: Center longitude
+            extent_meters: Extent in meters
+            extent_dimension: 'horizontal' or 'vertical'
+            tile_fetcher: TileFetcher instance
+            basemap_source: Basemap source name
+            base_zoom: Base zoom level (will try base_zoom-zoom_range to base_zoom+zoom_range)
+            zoom_range: Number of zoom levels to try on each side
+
+        Returns:
+            Tuple of (best_match_result, best_ref_image, best_extent, best_zoom)
+        """
+        # Calculate source aspect ratio
+        h, w = image_src.shape[:2]
+        source_aspect_ratio = w / h
+
+        # Try different zoom levels
+        zoom_levels = range(
+            max(0, base_zoom - zoom_range),
+            min(20, base_zoom + zoom_range + 1)
+        )
+
+        print(f"\nTrying matching at zoom levels: {list(zoom_levels)}")
+
+        best_result = None
+        best_ref_image = None
+        best_extent = None
+        best_zoom = base_zoom
+        best_quality_score = -1
+
+        for zoom in zoom_levels:
+            print(f"\n{'='*60}")
+            print(f"Trying zoom level {zoom}")
+            print(f"{'='*60}")
+
+            try:
+                # Fetch tiles at this zoom level
+                ref_image, ref_extent = tile_fetcher.fetch_tiles_from_center(
+                    center_lat=center_lat,
+                    center_lon=center_lon,
+                    extent_meters=extent_meters,
+                    extent_dimension=extent_dimension,
+                    source_aspect_ratio=source_aspect_ratio,
+                    source_name=basemap_source,
+                    zoom_level=zoom,
+                    target_size=832
+                )
+
+                print(f"Fetched reference image: {ref_image.shape}")
+
+                # Run matching
+                match_result = self.match_single_scale(image_src, ref_image, 832)
+
+                # Calculate quality score
+                # Combine multiple factors:
+                # - Number of matches (more is better)
+                # - Mean confidence (higher is better)
+                # - Geometric score (higher is better)
+                # - Distribution quality (higher is better)
+
+                num_matches = match_result.num_matches()
+                mean_conf = match_result.mean_confidence()
+                geom_score = match_result.geometric_score
+                dist_quality = match_result.distribution_quality
+
+                # Weighted quality score
+                quality_score = (
+                    (num_matches / 100.0) * 0.25 +  # Normalize num matches (assume 100 is very good)
+                    mean_conf * 0.35 +               # Confidence is important
+                    geom_score * 0.25 +              # Geometric consistency is important
+                    dist_quality * 0.15              # Distribution quality
+                )
+
+                print(f"Zoom {zoom} results:")
+                print(f"  - Matches: {num_matches}")
+                print(f"  - Mean confidence: {mean_conf:.3f}")
+                print(f"  - Geometric score: {geom_score:.3f}")
+                print(f"  - Distribution quality: {dist_quality:.3f}")
+                print(f"  - Overall quality score: {quality_score:.3f}")
+
+                # Keep the best result
+                if quality_score > best_quality_score:
+                    best_quality_score = quality_score
+                    best_result = match_result
+                    best_ref_image = ref_image
+                    best_extent = ref_extent
+                    best_zoom = zoom
+                    print(f"  ★ New best zoom level!")
+
+            except Exception as e:
+                print(f"Failed to match at zoom {zoom}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+
+        if best_result is None:
+            raise RuntimeError("Failed to match at any zoom level")
+
+        print(f"\n{'='*60}")
+        print(f"BEST RESULT: Zoom level {best_zoom}")
+        print(f"Quality score: {best_quality_score:.3f}")
+        print(f"Matches: {best_result.num_matches()}")
+        print(f"Mean confidence: {best_result.mean_confidence():.3f}")
+        print(f"{'='*60}\n")
+
+        return best_result, best_ref_image, best_extent, best_zoom
+
     def match_single_scale(
         self,
         image_src: np.ndarray,
