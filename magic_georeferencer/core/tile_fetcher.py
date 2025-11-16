@@ -410,10 +410,23 @@ class TileFetcher:
             # Check cache age (OSM policy: minimum 7 days)
             cache_age = datetime.now() - datetime.fromtimestamp(cache_file.stat().st_mtime)
             if cache_age < timedelta(days=self.cache_expiry_days):
-                # Cache is fresh, use it
+                # Cache is fresh, but check if it's an "access blocked" tile
                 try:
                     img = Image.open(cache_file)
-                    return np.array(img)
+                    img_array = np.array(img)
+
+                    # Detect OSM "access blocked" tiles
+                    # These are typically black images with white text
+                    # Check if image is mostly dark (likely blocked tile)
+                    if self._is_blocked_tile(img_array):
+                        print(f"Detected blocked tile in cache: {cache_file.name}, re-fetching...")
+                        # Delete the cached blocked tile
+                        cache_file.unlink()
+                        if cache_meta_file.exists():
+                            cache_meta_file.unlink()
+                    else:
+                        # Cache is valid and not blocked
+                        return img_array
                 except:
                     pass
 
@@ -602,6 +615,57 @@ class TileFetcher:
         rgb = arr[:, :, [2, 1, 0]]
 
         return rgb
+
+    def _is_blocked_tile(self, tile_array: np.ndarray) -> bool:
+        """
+        Detect if a tile is an OSM "access blocked" tile.
+
+        These tiles are typically black with white text saying "access blocked".
+        We detect them by checking if the tile is mostly very dark.
+
+        Args:
+            tile_array: Numpy array of tile image
+
+        Returns:
+            True if tile appears to be blocked, False otherwise
+        """
+        try:
+            # Handle different array shapes
+            if len(tile_array.shape) == 3:
+                # Color image - convert to grayscale
+                if tile_array.shape[2] == 4:
+                    # RGBA - use only RGB channels
+                    gray = np.mean(tile_array[:, :, :3], axis=2)
+                elif tile_array.shape[2] == 3:
+                    # RGB
+                    gray = np.mean(tile_array, axis=2)
+                else:
+                    # Unknown format
+                    return False
+            elif len(tile_array.shape) == 2:
+                # Already grayscale
+                gray = tile_array
+            else:
+                return False
+
+            # Calculate mean brightness (0-255)
+            mean_brightness = np.mean(gray)
+
+            # OSM blocked tiles are predominantly black (brightness < 30)
+            # and have some white text (high std dev)
+            std_brightness = np.std(gray)
+
+            # Blocked tiles: very dark with some bright pixels (text)
+            is_blocked = mean_brightness < 30 and std_brightness > 20
+
+            if is_blocked:
+                print(f"  Blocked tile detected: mean_brightness={mean_brightness:.1f}, std={std_brightness:.1f}")
+
+            return is_blocked
+
+        except Exception as e:
+            print(f"  Error checking for blocked tile: {e}")
+            return False
 
     def _resize_image(self, image: np.ndarray, target_size: int) -> np.ndarray:
         """Resize image to target size maintaining aspect ratio.

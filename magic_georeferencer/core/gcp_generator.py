@@ -42,7 +42,8 @@ class GCPGenerator:
         ref_extent: QgsRectangle,
         ref_crs: QgsCoordinateReferenceSystem,
         ref_image_size: Tuple[int, int],
-        src_image_size: Tuple[int, int]
+        src_image_size: Tuple[int, int],
+        downsample_factor: float = 1.0
     ) -> List:
         """Convert match results to QGIS Ground Control Points.
 
@@ -51,17 +52,21 @@ class GCPGenerator:
             ref_extent: Geographic extent of reference image
             ref_crs: CRS of reference extent
             ref_image_size: (width, height) of reference image in pixels
-            src_image_size: (width, height) of source image in pixels
+            src_image_size: (width, height) of source image in pixels (ORIGINAL size)
+            downsample_factor: If source image was downsampled for matching,
+                              this is the scale factor. GCP coordinates will be
+                              scaled back to original resolution.
 
         Returns:
             List of GCP objects (format depends on QGIS version)
 
         Process:
         1. For each match pair:
-           a. Source coords: pixel coords in ungeoreferenced image
-           b. Ref coords: pixel coords in basemap image
-           c. Transform ref pixel coords to geographic coords using extent
-           d. Create GCP with source pixels -> geographic coords
+           a. Source coords: pixel coords in ungeoreferenced image (downsampled)
+           b. Scale source coords back to original resolution if needed
+           c. Ref coords: pixel coords in basemap image
+           d. Transform ref pixel coords to geographic coords using extent
+           e. Create GCP with source pixels -> geographic coords
         """
         if not QGIS_AVAILABLE:
             raise RuntimeError("QGIS is not available")
@@ -71,11 +76,26 @@ class GCPGenerator:
         ref_width, ref_height = ref_image_size
         src_width, src_height = src_image_size
 
+        # Debug output for large image handling
+        if downsample_factor > 1.0:
+            print(f"\n{'='*80}")
+            print("GCP COORDINATE SCALING")
+            print(f"{'='*80}")
+            print(f"Downsample factor: {downsample_factor:.2f}x")
+            print(f"Match coordinates are in downsampled space")
+            print(f"GCP coordinates will be scaled to original image space:")
+            print(f"  Original image size: {src_width} x {src_height} px")
+            print(f"{'='*80}\n")
+
         # Iterate through matches
         for i in range(match_result.num_matches()):
-            # Source pixel coordinates (in ungeoreferenced image)
-            src_x = float(match_result.keypoints_src[i, 0])
-            src_y = float(match_result.keypoints_src[i, 1])
+            # Source pixel coordinates (in downsampled image if applicable)
+            src_x_downsampled = float(match_result.keypoints_src[i, 0])
+            src_y_downsampled = float(match_result.keypoints_src[i, 1])
+
+            # Scale source coordinates back to original resolution
+            src_x = src_x_downsampled * downsample_factor
+            src_y = src_y_downsampled * downsample_factor
 
             # Reference pixel coordinates (in basemap image)
             ref_x = float(match_result.keypoints_ref[i, 0])

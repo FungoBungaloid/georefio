@@ -112,13 +112,15 @@ class ModelManager:
 
     def download_weights(
         self,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Callable[[str, int, int], None]] = None
     ) -> Tuple[bool, str]:
         """Download model weights from HuggingFace Hub.
 
         Args:
-            progress_callback: Optional callback function(current, total) for progress updates
-                             Note: HuggingFace doesn't provide granular progress, so this may not be called
+            progress_callback: Optional callback function(status, current, total) for progress updates
+                             status: string describing current operation
+                             current: bytes downloaded so far
+                             total: total bytes to download
 
         Returns:
             Tuple of (success: bool, message: str)
@@ -127,22 +129,55 @@ class ModelManager:
             return False, "Transformers library not installed. Please install: pip install transformers"
 
         try:
+            from huggingface_hub import snapshot_download
+            from huggingface_hub.utils import tqdm as hf_tqdm
+
             # Download model and processor using transformers
             # This will download to cache_dir automatically
             print(f"Downloading model from HuggingFace: {self.MODEL_REPO}")
             print(f"Cache directory: {self.weights_dir}")
 
-            # Download processor (smaller, downloads first)
-            AutoImageProcessor.from_pretrained(
-                self.MODEL_REPO,
-                cache_dir=self.weights_dir
-            )
+            if progress_callback:
+                # Use snapshot_download with progress tracking
+                # This downloads all model files at once
+                progress_callback("Downloading model files...", 0, 100)
 
-            # Download model (larger)
-            AutoModel.from_pretrained(
-                self.MODEL_REPO,
-                cache_dir=self.weights_dir
-            )
+                # We'll use a custom progress wrapper
+                class ProgressWrapper:
+                    def __init__(self, callback):
+                        self.callback = callback
+                        self.total_files = 0
+                        self.completed_files = 0
+
+                    def __call__(self, filename):
+                        self.completed_files += 1
+                        if self.total_files > 0:
+                            percent = int((self.completed_files / self.total_files) * 100)
+                            self.callback(f"Downloading {filename}...", percent, 100)
+
+                wrapper = ProgressWrapper(progress_callback)
+
+                # Download using snapshot_download for better progress tracking
+                snapshot_download(
+                    repo_id=self.MODEL_REPO,
+                    cache_dir=self.weights_dir,
+                    resume_download=True
+                )
+
+                progress_callback("Download complete", 100, 100)
+            else:
+                # Simple download without progress
+                # Download processor (smaller, downloads first)
+                AutoImageProcessor.from_pretrained(
+                    self.MODEL_REPO,
+                    cache_dir=self.weights_dir
+                )
+
+                # Download model (larger)
+                AutoModel.from_pretrained(
+                    self.MODEL_REPO,
+                    cache_dir=self.weights_dir
+                )
 
             return True, f"Model downloaded successfully from {self.MODEL_REPO}"
 

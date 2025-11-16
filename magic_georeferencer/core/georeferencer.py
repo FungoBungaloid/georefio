@@ -41,7 +41,8 @@ class Georeferencer:
         target_crs: QgsCoordinateReferenceSystem,
         transform_type: str = 'polynomial_1',
         resampling: str = 'cubic',
-        compression: str = 'LZW'
+        compression: str = 'LZW',
+        progress_callback: Optional[callable] = None
     ) -> Tuple[bool, str]:
         """Georeference image using GDAL.
 
@@ -104,6 +105,9 @@ class Georeferencer:
             # Add input and output
             translate_cmd.extend([str(source_image_path), str(temp_vrt_path)])
 
+            if progress_callback:
+                progress_callback("Step 1/3: Adding GCPs to image...", 10, 100)
+
             print("\n" + "="*80)
             print("STEP 1: Adding GCPs with gdal_translate")
             print("="*80)
@@ -119,6 +123,9 @@ class Georeferencer:
                 text=True,
                 timeout=60
             )
+
+            if progress_callback:
+                progress_callback("Step 1/3: GCPs added successfully", 40, 100)
 
             print(f"gdal_translate return code: {result1.returncode}")
             if result1.stdout:
@@ -153,6 +160,9 @@ class Georeferencer:
             # Add input VRT and output
             warp_cmd.extend([str(temp_vrt_path), str(output_path)])
 
+            if progress_callback:
+                progress_callback("Step 2/3: Warping image (this may take a while)...", 50, 100)
+
             print("\n" + "="*80)
             print("STEP 2: Warping with gdalwarp")
             print("="*80)
@@ -171,6 +181,9 @@ class Georeferencer:
                 text=True,
                 timeout=300  # 5 minutes timeout
             )
+
+            if progress_callback:
+                progress_callback("Step 2/3: Warping complete", 80, 100)
 
             # Cleanup temp VRT
             if temp_vrt_path.exists():
@@ -198,12 +211,18 @@ class Georeferencer:
 
             # Load result into QGIS if interface available
             if self.iface is not None:
+                if progress_callback:
+                    progress_callback("Step 3/3: Loading into QGIS...", 90, 100)
+
                 print(f"Loading georeferenced raster into QGIS...")
                 load_success = self.load_raster(output_path)
                 if load_success:
                     print(f"✓ Raster loaded successfully into QGIS")
                 else:
                     print(f"⚠ Failed to load raster into QGIS (but file was created)")
+
+                if progress_callback:
+                    progress_callback("Complete!", 100, 100)
 
             return True, "Georeferencing completed successfully"
 

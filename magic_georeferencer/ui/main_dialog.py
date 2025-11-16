@@ -279,9 +279,12 @@ class MagicGeoreferencerDialog(QDialog):
         """Download model weights with progress"""
         progress = ProgressDialog(self, "Downloading Model Weights")
 
-        def progress_callback(current, total):
+        def progress_callback(status, current, total):
+            progress.set_status(status)
             progress.set_progress(current, total)
-            progress.set_status("Downloading model weights...")
+            # Process events to keep UI responsive
+            from qgis.PyQt.QtCore import QCoreApplication
+            QCoreApplication.processEvents()
 
         progress.show()
 
@@ -459,8 +462,38 @@ class MagicGeoreferencerDialog(QDialog):
             from PIL import Image
             import numpy as np
 
-            src_image = np.array(Image.open(self.source_image_path).convert('RGB'))
+            # Load source image and handle large images
+            src_image_pil = Image.open(self.source_image_path).convert('RGB')
+            original_size = src_image_pil.size  # (width, height)
+
+            # Check if image is too large and needs downsampling
+            MAX_DIMENSION = 4096  # Maximum size for matching
+            downsample_factor = 1.0
+
+            if original_size[0] > MAX_DIMENSION or original_size[1] > MAX_DIMENSION:
+                # Calculate downsample factor
+                downsample_factor = max(original_size[0] / MAX_DIMENSION,
+                                       original_size[1] / MAX_DIMENSION)
+                new_width = int(original_size[0] / downsample_factor)
+                new_height = int(original_size[1] / downsample_factor)
+
+                print(f"\n{'='*80}")
+                print("LARGE IMAGE DETECTED - Downsampling for matching")
+                print(f"{'='*80}")
+                print(f"Original size: {original_size[0]} x {original_size[1]} px")
+                print(f"Downsample factor: {downsample_factor:.2f}x")
+                print(f"Matching size: {new_width} x {new_height} px")
+                print(f"Note: GCPs will be scaled back to original resolution for georeferencing")
+                print(f"{'='*80}\n")
+
+                # Downsample using high-quality Lanczos resampling
+                src_image_pil = src_image_pil.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            src_image = np.array(src_image_pil)
             src_image_size = (src_image.shape[1], src_image.shape[0])  # (width, height)
+
+            # Store original size for GCP scaling
+            original_image_size = original_size
 
             progress.set_progress(10, 100)
 
@@ -556,12 +589,16 @@ class MagicGeoreferencerDialog(QDialog):
             web_mercator_crs = QgsCoordinateReferenceSystem('EPSG:3857')
 
             gcp_generator = GCPGenerator()
+
+            # Use original image size for GCPs (not downsampled size)
+            # If image was downsampled, GCP coordinates will be scaled automatically
             gcps = gcp_generator.matches_to_gcps(
                 match_result,
                 ref_extent,
                 web_mercator_crs,
                 ref_image_size,
-                src_image_size
+                original_image_size,  # Use original size, not downsampled
+                downsample_factor=downsample_factor  # Pass scale factor
             )
 
             progress.set_progress(80, 100)
@@ -595,9 +632,13 @@ class MagicGeoreferencerDialog(QDialog):
             output_path = Path(output_path)
 
             progress = ProgressDialog(self, "Georeferencing")
-            progress.set_status("Georeferencing image...")
-            progress.set_indeterminate(True)
+            progress.set_status("Initializing georeferencing...")
+            progress.set_progress(0, 100)
             progress.show()
+
+            # Process events to show progress dialog
+            from qgis.PyQt.QtCore import QCoreApplication
+            QCoreApplication.processEvents()
 
             georeferencer = Georeferencer(self.iface)
 
@@ -607,7 +648,13 @@ class MagicGeoreferencerDialog(QDialog):
                 match_result.distribution_quality
             )
 
-            # Perform georeferencing
+            # Define progress callback
+            def update_progress(status, current, total):
+                progress.set_status(status)
+                progress.set_progress(current, total)
+                QCoreApplication.processEvents()  # Keep UI responsive
+
+            # Perform georeferencing with progress updates
             success, message = georeferencer.georeference_image(
                 self.source_image_path,
                 gcps,
@@ -615,7 +662,8 @@ class MagicGeoreferencerDialog(QDialog):
                 web_mercator_crs,  # Use the CRS we defined earlier
                 transform_type=transform_type,
                 resampling=self.settings['georeferencing']['default_resampling'],
-                compression=self.settings['georeferencing']['default_compression']
+                compression=self.settings['georeferencing']['default_compression'],
+                progress_callback=update_progress
             )
 
             progress.close()
