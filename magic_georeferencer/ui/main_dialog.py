@@ -61,8 +61,16 @@ class MagicGeoreferencerDialog(QDialog):
         self.setMinimumWidth(600)
         self._setup_ui()
 
-        # Initialize model manager
-        self._init_model_manager()
+        # Initialize model manager with loading indicator
+        # This can take 5-10 seconds on first run
+        from qgis.PyQt.QtCore import QTimer, QCoreApplication
+
+        # Show status message
+        self.status_label.setText("Initializing AI model...")
+        QCoreApplication.processEvents()  # Update UI
+
+        # Use QTimer to let UI update before heavy operation
+        QTimer.singleShot(100, self._init_model_manager)
 
     def _setup_ui(self):
         """Setup user interface"""
@@ -234,9 +242,13 @@ class MagicGeoreferencerDialog(QDialog):
             self.model_manager = ModelManager()
 
             if self.model_manager.check_first_run():
+                self.status_label.setText("Ready - Model weights need to be downloaded")
                 self._show_first_run_dialog()
+            else:
+                self.status_label.setText("Ready")
 
         except Exception as e:
+            self.status_label.setText("Error during initialization")
             QMessageBox.critical(
                 self,
                 "Initialization Error",
