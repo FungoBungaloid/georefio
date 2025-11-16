@@ -279,9 +279,12 @@ class MagicGeoreferencerDialog(QDialog):
         """Download model weights with progress"""
         progress = ProgressDialog(self, "Downloading Model Weights")
 
-        def progress_callback(current, total):
+        def progress_callback(status, current, total):
+            progress.set_status(status)
             progress.set_progress(current, total)
-            progress.set_status("Downloading model weights...")
+            # Process events to keep UI responsive
+            from qgis.PyQt.QtCore import QCoreApplication
+            QCoreApplication.processEvents()
 
         progress.show()
 
@@ -629,9 +632,13 @@ class MagicGeoreferencerDialog(QDialog):
             output_path = Path(output_path)
 
             progress = ProgressDialog(self, "Georeferencing")
-            progress.set_status("Georeferencing image...")
-            progress.set_indeterminate(True)
+            progress.set_status("Initializing georeferencing...")
+            progress.set_progress(0, 100)
             progress.show()
+
+            # Process events to show progress dialog
+            from qgis.PyQt.QtCore import QCoreApplication
+            QCoreApplication.processEvents()
 
             georeferencer = Georeferencer(self.iface)
 
@@ -641,7 +648,13 @@ class MagicGeoreferencerDialog(QDialog):
                 match_result.distribution_quality
             )
 
-            # Perform georeferencing
+            # Define progress callback
+            def update_progress(status, current, total):
+                progress.set_status(status)
+                progress.set_progress(current, total)
+                QCoreApplication.processEvents()  # Keep UI responsive
+
+            # Perform georeferencing with progress updates
             success, message = georeferencer.georeference_image(
                 self.source_image_path,
                 gcps,
@@ -649,7 +662,8 @@ class MagicGeoreferencerDialog(QDialog):
                 web_mercator_crs,  # Use the CRS we defined earlier
                 transform_type=transform_type,
                 resampling=self.settings['georeferencing']['default_resampling'],
-                compression=self.settings['georeferencing']['default_compression']
+                compression=self.settings['georeferencing']['default_compression'],
+                progress_callback=update_progress
             )
 
             progress.close()
