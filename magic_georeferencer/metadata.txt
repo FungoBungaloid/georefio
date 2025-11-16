@@ -6,13 +6,39 @@ version=1.0.0
 author=Magic Georeferencer Team
 email=contact@example.com
 
-about=Automatically georeference maps, aerial photos, and sketches using the MatchAnything deep learning model. Simply navigate to the approximate location and let AI find the matching features. Features include: zero manual GCP placement, cross-modality support (maps to aerial, aerial to maps), progressive refinement for accuracy, GPU acceleration with CPU fallback, and confidence visualization.
+about=Automatically georeference maps, aerial photos, and sketches using the MatchAnything deep learning model. Simply navigate to the approximate location and let AI find the matching features.
+    .
+    Features:
+    - Zero manual GCP placement - fully automated
+    - Cross-modality support (maps to aerial, aerial to maps, sketches to maps)
+    - Progressive multi-scale refinement for improved accuracy
+    - GPU acceleration with automatic CPU fallback
+    - Confidence-based match filtering
+    .
+    Requirements:
+    - QGIS 3.22 or higher (Windows, macOS, Linux)
+    - Python 3.9+ (bundled with QGIS)
+    - 8 GB RAM minimum, 16 GB recommended
+    - ~2 GB disk space for model cache
+    - Optional: NVIDIA GPU with CUDA for faster processing
+    .
+    External Dependencies (auto-installed on first run):
+    - PyTorch >= 2.0.0 and TorchVision >= 0.15.0 (deep learning framework)
+    - Transformers >= 4.30.0 (HuggingFace model support)
+    - OpenCV >= 4.8.0 (image processing)
+    - SciPy >= 1.9.0 (scientific computing)
+    .
+    The plugin automatically downloads the AI model weights (~400 MB) from HuggingFace on first use.
+    .
+    Platform Support: Works on Windows, macOS, and Linux. GPU acceleration requires NVIDIA CUDA-capable GPU (optional, CPU fallback available).
+    .
+    License: GNU General Public License v3.0 (GPL-3.0)
 
-tracker=https://github.com/yourusername/magic-georeferencer/issues
-repository=https://github.com/yourusername/magic-georeferencer
-tags=georeferencing, machine learning, AI, automation, image matching, deep learning
+tracker=https://github.com/FungoBungaloid/georefio/issues
+repository=https://github.com/FungoBungaloid/georefio
+tags=georeferencing, machine learning, AI, automation, image matching, deep learning, raster
 
-homepage=https://github.com/yourusername/magic-georeferencer
+homepage=https://github.com/FungoBungaloid/georefio
 category=Raster
 icon=icon.png
 experimental=True
@@ -21,10 +47,15 @@ deprecated=False
 changelog=
     1.0.0 - Initial release
         - AI-powered automatic georeferencing
-        - MatchAnything model integration
-        - GPU and CPU support
-        - Progressive refinement
-        - Confidence visualization
+        - MatchAnything EfficientLoFTR model integration
+        - GPU and CPU support with auto-detection
+        - Progressive multi-scale refinement
+        - Quality presets (Strict/Balanced/Permissive)
+        - Multi-source basemap support (OSM, ESRI)
+        - Comprehensive documentation
 
 credits=Built on MatchAnything by He et al. (2025)
     https://github.com/XingyiHe/MatchAnything
+    .
+    Uses HuggingFace Transformers for model management
+    Basemap tiles from OpenStreetMap and ESRI

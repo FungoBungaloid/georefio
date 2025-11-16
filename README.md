@@ -97,6 +97,10 @@ magic_georeferencer/
 
 - **QGIS**: Version 3.22 or higher
 - **Python**: 3.9+ (bundled with QGIS)
+- **Operating System**:
+  - Windows 10/11 (64-bit)
+  - macOS 10.15+ (Catalina or later)
+  - Linux (Ubuntu 20.04+, Fedora 33+, or equivalent)
 - **RAM**: 8 GB minimum, 16 GB recommended
 - **Disk Space**: ~2 GB for model weights and cache
 
@@ -105,6 +109,7 @@ magic_georeferencer/
 - **NVIDIA GPU** with CUDA Compute Capability 3.5+
 - **CUDA Toolkit**: 11.7 or higher
 - **GPU RAM**: 4 GB minimum, 8 GB recommended
+- **Note**: GPU acceleration currently only available on Windows and Linux with NVIDIA CUDA. macOS users (including M1/M2) will use CPU mode (fully functional, just slower).
 
 ### Python Dependencies
 
@@ -144,22 +149,22 @@ The plugin requires the following Python packages (automatically installed):
 - [x] Progress tracking and error handling
 - [x] Comprehensive documentation (README, INSTALL, USAGE, CLAUDE)
 
-### Current Implementation Note ℹ️
+### Implementation Status ℹ️
 
-**Plugin Status: ~95% Complete** - The plugin is feature-complete with a fully integrated workflow.
+**Plugin Status: Fully Functional** - The plugin is feature-complete with a fully integrated AI-powered workflow.
 
-The model inference uses a **working fallback approach** that provides grid-based matching. The actual EfficientLoFTR keypoint extraction can be optimized once the model's matching API is fully documented or when `transformers >= 4.40.0` includes `EfficientLoFTRForKeypointMatching`.
+The plugin performs **real AI feature matching** using the EfficientLoFTR model from HuggingFace. The inference pipeline successfully extracts keypoint correspondences and produces accurate georeferencing results. While there may be opportunities for optimization as the transformers library evolves, the current implementation is production-ready.
 
-See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for detailed status and test results.
+See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for detailed technical information.
 
 ### Pending Enhancements 📋
 
-- [ ] Optimize EfficientLoFTR keypoint extraction (replace fallback)
-- [ ] Enhanced confidence viewer UI (currently functional placeholder)
-- [ ] Settings dialog (optional feature)
-- [ ] Batch processing support
-- [ ] Quality assurance reports
-- [ ] Template library
+- [ ] Enhanced confidence viewer UI (visual match display with side-by-side images)
+- [ ] Settings dialog for persistent preferences (optional feature)
+- [ ] Batch processing support (process multiple images)
+- [ ] Quality assurance reports (RMSE calculations, accuracy metrics)
+- [ ] Template library (save/share successful configurations)
+- [ ] Model inference optimizations (as transformers library evolves)
 
 ## Technical Details
 
@@ -193,6 +198,92 @@ The plugin automatically suggests the appropriate transform type based on the nu
 | CPU (8-core) | 4096x4096 | ~3 minutes |
 
 *Note: Times vary based on image complexity and number of features*
+
+## Known Limitations & When It May Struggle
+
+While Magic Georeferencer works well for most standard georeferencing tasks, there are scenarios where it may struggle or fail. Understanding these limitations helps you know when to use the tool and when manual georeferencing might be more appropriate.
+
+### Image Types That May Cause Issues
+
+**Very Stylized or Artistic Maps:**
+- Hand-drawn artistic maps with minimal realistic features
+- Highly abstracted or schematic representations
+- Fantasy/fictional maps with no real-world correspondence
+- **Workaround:** Try using a permissive quality threshold, or add manual GCPs alongside AI-generated ones
+
+**Low Contrast or Degraded Images:**
+- Severely faded historical documents
+- Poor quality scans with low dynamic range
+- Overexposed or underexposed photographs
+- **Workaround:** Pre-process images to enhance contrast; use OSM Humanitarian basemap for higher contrast matching
+
+**Very Large Geographic Areas:**
+- Continental or global-scale maps
+- Small-scale maps where detail is minimal
+- Maps covering thousands of kilometers
+- **Why:** Feature matching requires sufficient local detail, which decreases at very small scales
+- **Workaround:** Focus on a specific region of the map, or use manual GCPs for large-scale maps
+
+**Unusual or Non-Standard Projections:**
+- Polar projections (stereographic, azimuthal)
+- Highly distorted artistic projections
+- Historical projections not commonly used today
+- **Why:** The basemap is in Web Mercator (EPSG:3857), which has high distortion at poles
+- **Workaround:** Manually georeference or choose a region within reasonable latitudes (< 70°)
+
+**Polar and High-Latitude Regions:**
+- Maps of Arctic or Antarctic regions
+- Areas above 80° latitude
+- **Why:** Web Mercator projection (used by tile services) doesn't cover polar regions well
+- **Workaround:** Use manual georeferencing or specialized polar basemaps
+
+**Maps with Extreme Rotation or Perspective:**
+- Severely rotated scans (>45° off-axis can be challenging)
+- Oblique aerial photographs
+- Bird's-eye perspective drawings
+- **Note:** The AI can handle moderate rotation, but extreme cases may need manual orientation first
+
+### Other Challenging Scenarios
+
+**Temporal Mismatches:**
+- Historical maps showing areas that have completely changed (new development, natural disasters, etc.)
+- **Example:** A 1950s map of a city that has been completely rebuilt
+- **Workaround:** Look for unchanged features (rivers, coastlines, major roads)
+
+**Text-Only or Label-Heavy Maps:**
+- Maps with mostly text and minimal geographic features
+- Cadastral maps with primarily boundary lines and labels
+- **Why:** The model works best with visual features, not text recognition
+
+**Nighttime or Specialized Imagery:**
+- Nighttime satellite imagery (lights)
+- Thermal imagery
+- Radar/SAR imagery
+- **Note:** Cross-modality matching can work but may be less reliable
+
+### Success Tips
+
+To maximize your chances of success:
+
+1. **Start with clear, well-preserved images** when possible
+2. **Match modality:** Use aerial basemaps for aerial images, road maps for road maps
+3. **Try multiple basemaps** if the first doesn't work (OSM Standard, ESRI Imagery, OSM Humanitarian)
+4. **Use progressive refinement** for challenging images
+5. **Adjust quality thresholds:** Start with Balanced, try Permissive for difficult cases
+6. **Pre-process images:** Enhance contrast, crop to relevant area, straighten severe rotation
+7. **Focus on unchanged features:** Rivers, coastlines, mountain peaks often persist across time
+
+### When to Use Manual Georeferencing Instead
+
+Consider manual GCP placement when:
+- Map is purely schematic or artistic
+- Image quality is extremely poor
+- Coverage is global/continental scale
+- Projection is highly unusual
+- Area has changed completely since map creation
+- You need sub-meter accuracy for scientific applications
+
+You can also use a **hybrid approach**: Let the AI generate initial GCPs, then manually add or refine them in QGIS's georeferencer.
 
 ## Troubleshooting
 

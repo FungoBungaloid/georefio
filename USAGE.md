@@ -17,7 +17,7 @@ That's it! The plugin automates the entire georeferencing process.
 ### Step 1: Open the Plugin
 
 **Method 1:** Click the Magic Georeferencer icon in the toolbar
-**Method 2:** Go to `Raster ’ Magic Georeferencer`
+**Method 2:** Go to `Raster ï¿½ Magic Georeferencer`
 
 The main dialog will open.
 
@@ -114,14 +114,27 @@ Select a quality preset:
 
 **Progressive Refinement** (checkbox):
 -  **Enabled (recommended):** Multi-scale matching for better accuracy
-  - Slower but more accurate
-  - Starts at low resolution, refines progressively
-  - Better handling of scale differences
+  - **How it works:** Starts matching at low resolution for speed, then refines at higher resolutions for accuracy
+  - **Advantages:**
+    - More accurate results - refines match locations progressively
+    - Better handling of scale differences between your image and the map
+    - More robust for challenging images (poor quality, unusual perspectives)
+    - Helps filter out false matches early
+  - **Tradeoffs:**
+    - 2-3x slower than single-scale (still usually under 30 seconds with GPU)
+    - Uses slightly more memory
+  - **Best for:** Historical maps, degraded images, complex scenes, when accuracy matters more than speed
 
 -  **Disabled:** Single-scale matching
-  - Faster processing
-  - Good for simple cases
-  - Use when time is critical
+  - **How it works:** Processes at one resolution (832px) only
+  - **Advantages:**
+    - Faster processing (5-10 seconds with GPU vs 15-30 seconds with progressive)
+    - Lower memory usage
+    - Sufficient for most simple georeferencing tasks
+  - **Tradeoffs:**
+    - May miss some matches or be less accurate
+    - Less robust to scale mismatches
+  - **Best for:** High-quality modern images, when you need quick results, batch processing, or working with limited hardware resources
 
 ### Step 6: Run Matching
 
@@ -340,7 +353,7 @@ Verify georeferencing quality:
 2. **Re-download model:** Delete weights folder, restart plugin
 3. **Check disk space:** Model requires ~500 MB
 4. **Internet connection:** Model downloads from HuggingFace
-5. **Check error log:** QGIS Python Console ’ Show Errors
+5. **Check error log:** QGIS Python Console ï¿½ Show Errors
 
 ## Tips for Best Results
 
@@ -437,4 +450,4 @@ Found a way to improve the workflow? Submit a pull request or open an issue!
 
 ---
 
-**Happy Georeferencing!** =ú(
+**Happy Georeferencing!** =ï¿½(
