@@ -498,7 +498,11 @@ def main():
         print("  2. Load a basemap (e.g., OpenStreetMap)")
         print("  3. Navigate to your area of interest")
         print("  4. Open Python Console (Ctrl+Alt+P)")
-        print("  5. Run: exec(open('/home/user/georefio/debug_tile_zoom_coordinates.py').read())")
+        print("  5. Run:")
+        print("     import os")
+        print("     script_path = os.path.join(os.path.expanduser('~'), 'georefio', 'debug_tile_zoom_coordinates.py')")
+        print("     exec(open(script_path).read())")
+        print("     (Adjust path if you cloned the repo elsewhere)")
         return
 
     # Run all checks

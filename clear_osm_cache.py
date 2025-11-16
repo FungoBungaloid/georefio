@@ -6,7 +6,11 @@ This is useful if you have cached "access blocked" tiles from OSM
 before the User-Agent fix was applied.
 
 Run this from the QGIS Python console:
-    exec(open('/home/user/georefio/clear_osm_cache.py').read())
+    import os
+    script_path = os.path.join(os.path.expanduser('~'), 'georefio', 'clear_osm_cache.py')
+    exec(open(script_path).read())
+
+Or if you cloned the repo elsewhere, adjust the path accordingly.
 """
 
 from pathlib import Path
