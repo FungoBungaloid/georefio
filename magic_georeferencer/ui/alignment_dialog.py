@@ -150,15 +150,26 @@ class AlignmentDialog(QDialog):
         self.map_info_label.setWordWrap(True)
         map_info_layout.addWidget(self.map_info_label)
 
-        refresh_btn = QPushButton("Refresh Map Info")
-        refresh_btn.clicked.connect(self._update_map_info)
-        map_info_layout.addWidget(refresh_btn)
+        # Info about auto-refresh
+        auto_refresh_note = QLabel(
+            "<i style='color: #666; font-size: 9pt;'>"
+            "Map info updates automatically as you pan/zoom QGIS"
+            "</i>"
+        )
+        auto_refresh_note.setWordWrap(True)
+        map_info_layout.addWidget(auto_refresh_note)
 
         self.map_info_group.setLayout(map_info_layout)
         layout.addWidget(self.map_info_group)
 
         # Initial map info
         self._update_map_info()
+
+        # Set up timer for auto-refresh (update every 1 second)
+        from PyQt5.QtCore import QTimer
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self._update_map_info)
+        self.refresh_timer.start(1000)  # 1000ms = 1 second
 
         # Attribution note
         attribution_label = QLabel(
