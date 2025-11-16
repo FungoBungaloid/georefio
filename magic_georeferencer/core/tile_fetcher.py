@@ -23,10 +23,11 @@ try:
         QgsProject,
         QgsMapSettings,
         QgsMapRendererCustomPainterJob,
-        QgsApplication
+        QgsApplication,
+        QgsRasterLayer
     )
     from qgis.PyQt.QtCore import QSize
-    from qgis.PyQt.QtGui import QImage, QPainter
+    from qgis.PyQt.QtGui import QImage, QPainter, QColor
     QGIS_AVAILABLE = True
 except ImportError:
     QGIS_AVAILABLE = False
@@ -149,6 +150,103 @@ class TileFetcher:
 
         return image_array, extent
 
+    def render_tiles_with_qgis(
+        self,
+        extent: QgsRectangle,
+        crs: QgsCoordinateReferenceSystem,
+        source_name: str,
+        target_size: int = 832
+    ) -> Tuple[np.ndarray, QgsRectangle]:
+        """
+        Render basemap tiles using QGIS's built-in XYZ tile layer.
+
+        This method uses QGIS's native tile rendering which properly handles
+        OSM tile access with correct headers and caching. This avoids the
+        "access denied" issues we get with direct tile fetching.
+
+        Args:
+            extent: Geographic extent to render
+            crs: Coordinate system of extent
+            source_name: Key from tile_sources.json
+            target_size: Target output size (will maintain aspect ratio)
+
+        Returns:
+            Tuple of (rendered_image, extent):
+            - rendered_image: RGB numpy array [H, W, 3]
+            - extent: QgsRectangle in the specified CRS
+        """
+        if not QGIS_AVAILABLE:
+            raise RuntimeError("QGIS is not available")
+
+        if source_name not in self.tile_sources:
+            raise ValueError(f"Unknown tile source: {source_name}")
+
+        source = self.tile_sources[source_name]
+
+        # Create XYZ tile layer URI
+        # Format: type=xyz&url=...&zmin=0&zmax=19
+        tile_url = source['url']
+        max_zoom = source.get('max_zoom', 19)
+
+        # Build URI for XYZ tiles
+        uri = f"type=xyz&url={tile_url}&zmin=0&zmax={max_zoom}"
+
+        # Create temporary raster layer
+        layer = QgsRasterLayer(uri, 'temp_basemap', 'wms')
+
+        if not layer.isValid():
+            raise RuntimeError(f"Failed to create XYZ tile layer for {source_name}")
+
+        print(f"✓ Created QGIS XYZ tile layer: {source['name']}")
+
+        # Calculate target image size maintaining aspect ratio
+        extent_width = extent.width()
+        extent_height = extent.height()
+        aspect_ratio = extent_width / extent_height
+
+        if aspect_ratio > 1:
+            # Landscape
+            target_width = target_size
+            target_height = int(target_size / aspect_ratio)
+        else:
+            # Portrait
+            target_height = target_size
+            target_width = int(target_size * aspect_ratio)
+
+        # Create map settings for rendering
+        settings = QgsMapSettings()
+        settings.setExtent(extent)
+        settings.setDestinationCrs(crs)
+        settings.setOutputSize(QSize(target_width, target_height))
+        settings.setLayers([layer])
+
+        # Set background color to white (so we can detect black "access denied" tiles)
+        settings.setBackgroundColor(QColor(255, 255, 255))
+
+        # Create QImage for rendering
+        image = QImage(QSize(target_width, target_height), QImage.Format_RGB32)
+        image.fill(QColor(255, 255, 255))  # White background
+
+        # Render map
+        print(f"  Rendering {target_width}x{target_height} image...")
+        painter = QPainter(image)
+        job = QgsMapRendererCustomPainterJob(settings, painter)
+        job.start()
+        job.waitForFinished()
+        painter.end()
+
+        # Convert QImage to numpy array
+        image_array = self._qimage_to_numpy(image)
+
+        print(f"✓ Rendered image: {image_array.shape}, range: [{image_array.min()}, {image_array.max()}]")
+
+        # Check if we got a valid image (not mostly white/empty)
+        mean_brightness = np.mean(image_array)
+        if mean_brightness > 250:
+            print(f"⚠ WARNING: Rendered image is mostly white (mean={mean_brightness:.1f}), tiles may not have loaded")
+
+        return image_array, extent
+
     def fetch_tiles_from_center(
         self,
         center_lat: float,
@@ -158,7 +256,8 @@ class TileFetcher:
         source_aspect_ratio: float,
         source_name: str,
         zoom_level: int,
-        target_size: int = 832
+        target_size: int = 832,
+        use_qgis_rendering: bool = True
     ) -> Tuple[np.ndarray, QgsRectangle]:
         """
         Fetch tiles based on center point and one extent dimension.
@@ -174,6 +273,8 @@ class TileFetcher:
             source_name: Tile source key
             zoom_level: Zoom level to fetch
             target_size: Target output image size (will be square)
+            use_qgis_rendering: If True, use QGIS's built-in XYZ tile rendering (recommended for OSM)
+                              If False, fetch tiles directly (may get blocked by OSM)
 
         Returns:
             Tuple of (image_array, extent_rectangle):
@@ -217,8 +318,13 @@ class TileFetcher:
         print(f"  Zoom: {zoom_level}")
         print(f"  Aspect ratio: {source_aspect_ratio:.3f}")
 
-        # Fetch tiles for this extent
-        return self.fetch_tiles(extent, web_mercator, source_name, zoom_level, target_size)
+        # Choose rendering method
+        if use_qgis_rendering:
+            print(f"  Using QGIS built-in XYZ tile rendering (recommended for OSM)")
+            return self.render_tiles_with_qgis(extent, web_mercator, source_name, target_size)
+        else:
+            print(f"  Using direct tile fetching (may be blocked by OSM)")
+            return self.fetch_tiles(extent, web_mercator, source_name, zoom_level, target_size)
 
     def fetch_tiles(
         self,
