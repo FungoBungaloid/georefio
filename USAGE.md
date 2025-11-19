@@ -434,7 +434,6 @@ Verify georeferencing quality:
 ### Resources
 
 - **Documentation:** README.md, INSTALL.md, this file
-- **Test script:** `test_model.py` for model testing
 - **QGIS docs:** https://qgis.org/en/docs/
 - **HuggingFace model:** https://huggingface.co/zju-community/matchanything_eloftr
 

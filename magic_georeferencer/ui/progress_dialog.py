@@ -85,18 +85,12 @@ class ProgressDialog(QDialog):
         if total > 0:
             percentage = int((current / total) * 100)
             self.progress_bar.setValue(percentage)
-
-            # Update detail label for downloads
-            if current > 0 and total > 0:
-                current_mb = current / (1024 * 1024)
-                total_mb = total / (1024 * 1024)
-                self.detail_label.setText(
-                    f"{current_mb:.1f} / {total_mb:.1f} MB ({percentage}%)"
-                )
+            self.detail_label.setText(f"{percentage}%")
         else:
             # Indeterminate progress
             self.progress_bar.setMaximum(0)
             self.progress_bar.setMinimum(0)
+            self.detail_label.setText("")
 
     def set_indeterminate(self, indeterminate: bool = True):
         """Set progress bar to indeterminate mode.

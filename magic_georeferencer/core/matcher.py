@@ -67,8 +67,8 @@ class Matcher:
 
         self.model = model_manager.model
 
-        # Debug directory (can be set by UI)
-        self.debug_dir = Path.home() / "georefio_debug"
+        # Debug directory (can be set by UI, None by default)
+        self.debug_dir = None
 
     def match_progressive(
         self,
@@ -279,35 +279,36 @@ class Matcher:
         print(f"  image_src shape: {image_src.shape}, dtype: {image_src.dtype}, range: [{image_src.min()}, {image_src.max()}]")
         print(f"  image_ref shape: {image_ref.shape}, dtype: {image_ref.dtype}, range: [{image_ref.min()}, {image_ref.max()}]")
 
-        # Debug: Save images to disk for inspection
-        try:
-            from PIL import Image as PILImage
-            debug_dir = self.debug_dir
-            debug_dir.mkdir(parents=True, exist_ok=True)
+        # Debug: Save images to disk for inspection (only if debug_dir is set)
+        if self.debug_dir is not None:
+            try:
+                from PIL import Image as PILImage
+                debug_dir = self.debug_dir
+                debug_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save source image
-            src_pil = PILImage.fromarray(image_src.astype('uint8'))
-            src_path = debug_dir / "source_image.png"
-            src_pil.save(src_path)
-            print(f"  ✓ Saved source image to: {src_path}")
+                # Save source image
+                src_pil = PILImage.fromarray(image_src.astype('uint8'))
+                src_path = debug_dir / "source_image.png"
+                src_pil.save(src_path)
+                print(f"  Saved source image to: {src_path}")
 
-            # Save reference image
-            ref_pil = PILImage.fromarray(image_ref.astype('uint8'))
-            ref_path = debug_dir / "reference_tiles.png"
-            ref_pil.save(ref_path)
-            print(f"  ✓ Saved reference tiles to: {ref_path}")
+                # Save reference image
+                ref_pil = PILImage.fromarray(image_ref.astype('uint8'))
+                ref_path = debug_dir / "reference_tiles.png"
+                ref_pil.save(ref_path)
+                print(f"  Saved reference tiles to: {ref_path}")
 
-            # If reference is very dark, try to enhance for inspection
-            if image_ref.max() < 100:
-                print(f"  ⚠ WARNING: Reference image is very dark (max value: {image_ref.max()})")
-                # Save an enhanced version
-                enhanced = (image_ref.astype(float) / image_ref.max() * 255).astype('uint8') if image_ref.max() > 0 else image_ref
-                enhanced_pil = PILImage.fromarray(enhanced)
-                enhanced_path = debug_dir / "reference_tiles_enhanced.png"
-                enhanced_pil.save(enhanced_path)
-                print(f"  ✓ Saved enhanced reference to: {enhanced_path}")
-        except Exception as e:
-            print(f"  ✗ Failed to save debug images: {e}")
+                # If reference is very dark, try to enhance for inspection
+                if image_ref.max() < 100:
+                    print(f"  WARNING: Reference image is very dark (max value: {image_ref.max()})")
+                    # Save an enhanced version
+                    enhanced = (image_ref.astype(float) / image_ref.max() * 255).astype('uint8') if image_ref.max() > 0 else image_ref
+                    enhanced_pil = PILImage.fromarray(enhanced)
+                    enhanced_path = debug_dir / "reference_tiles_enhanced.png"
+                    enhanced_pil.save(enhanced_path)
+                    print(f"  Saved enhanced reference to: {enhanced_path}")
+            except Exception as e:
+                print(f"  Failed to save debug images: {e}")
 
         # Resize images to target size
         img_src_resized, scale_src = self.model.resize_image(image_src, size)

@@ -18,20 +18,41 @@
 
 ## Installation Methods
 
-### Method 1: Install from ZIP (Recommended)
+### Method 1: QGIS Plugin Repository (Recommended)
 
-This is the easiest method for testing and development.
+Once published to the official QGIS plugin repository, this is the easiest method:
 
-#### Step 1: Prepare the Plugin ZIP
+1. Open QGIS
+2. Go to `Plugins > Manage and Install Plugins`
+3. Search for "Magic Georeferencer"
+4. Click "Install Plugin"
+5. Dependencies will be automatically installed
 
-1. Download or clone the repository
-2. Navigate to the `georefio` folder
-3. Create a ZIP file of ONLY the `magic_georeferencer` folder:
-   - **Windows**: Right-click `magic_georeferencer` folder → "Send to" → "Compressed (zipped) folder"
-   - **macOS**: Right-click `magic_georeferencer` folder → "Compress magic_georeferencer"
-   - **Linux**: `zip -r magic_georeferencer.zip magic_georeferencer/`
+### Method 2: Install from ZIP (Manual Fallback)
 
-#### Step 2: Install in QGIS
+If the plugin is not yet available in the repository, or you need a development version:
+
+#### Step 1: Download the Repository
+
+1. Go to the GitHub repository
+2. Click the green "Code" button
+3. Select "Download ZIP"
+4. Unzip the downloaded file to a temporary location
+
+#### Step 2: Prepare the Plugin ZIP
+
+**Important**: You need to create a ZIP of just the `magic_georeferencer` folder, not the entire repository.
+
+1. Open the extracted folder (e.g., `georefio-main`)
+2. Find the `magic_georeferencer` folder inside
+3. Create a ZIP file containing **only** the `magic_georeferencer` folder:
+   - **Windows**: Right-click `magic_georeferencer` folder > "Send to" > "Compressed (zipped) folder"
+   - **macOS**: Right-click `magic_georeferencer` folder > "Compress magic_georeferencer"
+   - **Linux**: `cd georefio-main && zip -r magic_georeferencer.zip magic_georeferencer/`
+
+The resulting ZIP file should be named `magic_georeferencer.zip` and when opened should show the `magic_georeferencer` folder at the top level.
+
+#### Step 3: Install in QGIS
 
 1. Open QGIS
 2. Go to `Plugins > Manage and Install Plugins`
@@ -39,7 +60,7 @@ This is the easiest method for testing and development.
 4. Click the "..." button and select your `magic_georeferencer.zip` file
 5. Click "Install Plugin"
 
-#### Step 3: Install Dependencies (AUTOMATIC)
+#### Step 4: Install Dependencies (AUTOMATIC)
 
 When you first click the plugin icon in QGIS:
 
@@ -55,7 +76,7 @@ When you first click the plugin icon in QGIS:
 - OpenCV (image processing)
 - SciPy and NumPy (scientific computing)
 
-### Method 2: Manual Dependency Installation
+### Method 3: Manual Dependency Installation
 
 If automatic installation doesn't work, you can install dependencies manually:
 
@@ -97,16 +118,6 @@ which python3
 # Replace /path/to/qgis/python3 with actual path
 /path/to/qgis/python3 -m pip install --user -r requirements.txt
 ```
-
-### Method 3: QGIS Plugin Manager (When Published)
-
-Once published to the official QGIS plugin repository:
-
-1. Open QGIS
-2. Go to `Plugins > Manage and Install Plugins`
-3. Search for "Magic Georeferencer"
-4. Click "Install Plugin"
-5. Dependencies will be automatically installed
 
 **Alternative: Use QGIS Python Console**
 ```python

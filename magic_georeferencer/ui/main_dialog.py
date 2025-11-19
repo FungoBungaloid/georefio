@@ -188,8 +188,9 @@ class MagicGeoreferencerDialog(QDialog):
 
         debug_path_layout = QHBoxLayout()
         self.debug_dir_edit = QLineEdit()
-        self.debug_dir_edit.setText(str(Path.home() / "georefio_debug"))
+        self.debug_dir_edit.setText("")  # Empty by default - user must set if desired
         self.debug_dir_edit.setReadOnly(True)
+        self.debug_dir_edit.setPlaceholderText("Optional: select folder for debug images")
         debug_path_layout.addWidget(self.debug_dir_edit)
 
         browse_debug_btn = QPushButton("Browse...")
@@ -214,12 +215,6 @@ class MagicGeoreferencerDialog(QDialog):
         help_btn = QPushButton("Help")
         help_btn.clicked.connect(self._show_help)
         layout.addWidget(help_btn)
-
-        # Settings button
-        settings_btn = QPushButton("Settings")
-        settings_btn.clicked.connect(self._show_settings)
-        settings_btn.setEnabled(False)  # TODO: Implement settings
-        layout.addWidget(settings_btn)
 
         layout.addStretch()
 
@@ -385,7 +380,7 @@ class MagicGeoreferencerDialog(QDialog):
         source_key = self.basemap_combo.currentData()
         if source_key and source_key in self.tile_sources:
             desc = self.tile_sources[source_key].get('description', '')
-            self.basemap_desc_label.setText(f"9 {desc}")
+            self.basemap_desc_label.setText(desc)
 
     def _browse_debug_dir(self):
         """Browse for debug output directory"""
@@ -534,8 +529,12 @@ class MagicGeoreferencerDialog(QDialog):
             else:
                 zoom_range = 1  # Try base_zoom-1 to base_zoom+1 (3 zoom levels)
 
-            # Set debug directory for matcher
-            self.matcher.debug_dir = Path(self.debug_dir_edit.text())
+            # Set debug directory for matcher (only if user specified one)
+            debug_path_text = self.debug_dir_edit.text().strip()
+            if debug_path_text:
+                self.matcher.debug_dir = Path(debug_path_text)
+            else:
+                self.matcher.debug_dir = None
 
             # Run multi-zoom matching
             match_result, ref_image, ref_extent, best_zoom = self.matcher.match_multi_zoom(
@@ -681,11 +680,16 @@ class MagicGeoreferencerDialog(QDialog):
             progress.close()
 
             if success:
+                # Get project CRS name for display
+                project_crs = QgsProject.instance().crs()
+                crs_name = project_crs.authid() if project_crs.isValid() else "EPSG:3857"
+
                 QMessageBox.information(
                     self,
                     "Success!",
                     f"Image georeferenced successfully!\n\n"
                     f"Output: {output_path}\n"
+                    f"Output CRS: {crs_name} (project CRS)\n"
                     f"Matches: {match_result.num_matches()}\n"
                     f"Mean confidence: {match_result.mean_confidence():.2f}\n"
                     f"Transform type: {transform_type}\n\n"
@@ -734,7 +738,3 @@ class MagicGeoreferencerDialog(QDialog):
             "- Progressive refinement improves accuracy but takes longer"
         )
 
-    def _show_settings(self):
-        """Show settings dialog"""
-        # TODO: Implement settings dialog
-        pass
