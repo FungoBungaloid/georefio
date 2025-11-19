@@ -32,7 +32,7 @@ about=Automatically georeference maps, aerial photos, and sketches using the Mat
     .
     Platform Support: Works on Windows, macOS, and Linux. GPU acceleration requires NVIDIA CUDA-capable GPU (optional, CPU fallback available).
     .
-    License: GNU General Public License v3.0 (GPL-3.0)
+    License: Apache License 2.0
 
 tracker=https://github.com/FungoBungaloid/georefio/issues
 repository=https://github.com/FungoBungaloid/georefio
@@ -55,7 +55,9 @@ changelog=
         - Comprehensive documentation
 
 credits=Built on MatchAnything by He et al. (2025)
-    https://github.com/XingyiHe/MatchAnything
+    https://github.com/zju3dv/MatchAnything
     .
     Uses HuggingFace Transformers for model management
     Basemap tiles from OpenStreetMap and ESRI
+    .
+    Co-developed using Claude Code by Anthropic
