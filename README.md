@@ -1,5 +1,7 @@
 # Magic Georeferencer
 
+![Logo](magic_georeferencer/icon.png)
+
 **AI-Powered Automatic Image Georeferencing for QGIS**
 
 Magic Georeferencer is a QGIS plugin that leverages the MatchAnything deep learning model to automatically georeference ungeoreferenced images (maps, aerial photos, sketches) by matching them against real-world basemap data.
