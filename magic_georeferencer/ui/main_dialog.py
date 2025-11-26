@@ -72,6 +72,17 @@ class MagicGeoreferencerDialog(QDialog):
         # Use QTimer to let UI update before heavy operation
         QTimer.singleShot(100, self._init_model_manager)
 
+    def showEvent(self, event):
+        """Override showEvent to ensure model is initialized when dialog is shown"""
+        super().showEvent(event)
+
+        # Check if model manager needs to be initialized (e.g., after QGIS restart)
+        if self.model_manager is None:
+            from qgis.PyQt.QtCore import QTimer, QCoreApplication
+            self.status_label.setText("Initializing AI model...")
+            QCoreApplication.processEvents()
+            QTimer.singleShot(100, self._init_model_manager)
+
     def _setup_ui(self):
         """Setup user interface"""
         layout = QVBoxLayout()
@@ -240,7 +251,9 @@ class MagicGeoreferencerDialog(QDialog):
                 self.status_label.setText("Ready - Model weights need to be downloaded")
                 self._show_first_run_dialog()
             else:
-                self.status_label.setText("Ready")
+                # Weights exist - load the model automatically
+                self.status_label.setText("Loading model...")
+                self._load_model()
 
         except Exception as e:
             self.status_label.setText("Error during initialization")

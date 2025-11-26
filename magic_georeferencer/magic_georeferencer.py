@@ -42,6 +42,10 @@ class MagicGeoreferencer:
         # Plugin dialog
         self.dialog = None
 
+        # Cache dependency check result to avoid repeated checks
+        self._dependencies_checked = False
+        self._dependencies_available = False
+
     def tr(self, message):
         """Get the translation for a string using Qt translation API."""
         return QCoreApplication.translate('MagicGeoreferencer', message)
@@ -129,10 +133,13 @@ class MagicGeoreferencer:
 
     def run(self):
         """Run method that performs all the real work"""
-        # Check dependencies before importing
-        from .dependency_installer import check_and_prompt_install
+        # Check dependencies before importing (cache result to avoid repeated checks)
+        if not self._dependencies_checked:
+            from .dependency_installer import check_and_prompt_install
+            self._dependencies_available = check_and_prompt_install(self.iface.mainWindow())
+            self._dependencies_checked = True
 
-        if not check_and_prompt_install(self.iface.mainWindow()):
+        if not self._dependencies_available:
             # Dependencies not available or user cancelled
             return
 
