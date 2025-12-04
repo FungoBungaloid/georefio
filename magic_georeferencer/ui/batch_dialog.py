@@ -257,9 +257,26 @@ class BatchDialog(QDialog):
         group = QGroupBox("Matching Settings")
         layout = QVBoxLayout()
 
-        # Basemap source
+        # Automatic mode explanation
+        auto_info = QLabel(
+            "By default, the AI will automatically select the best basemap for each image "
+            "and try progressively relaxed quality thresholds until a match is found. "
+            "Enable manual control below to override these settings."
+        )
+        auto_info.setWordWrap(True)
+        auto_info.setStyleSheet("color: #666; font-style: italic; margin-bottom: 8px;")
+        layout.addWidget(auto_info)
+
+        # Manual control checkbox
+        self.manual_control_checkbox = QCheckBox("Enable manual control (override automatic settings)")
+        self.manual_control_checkbox.setChecked(False)
+        self.manual_control_checkbox.stateChanged.connect(self._on_manual_control_changed)
+        layout.addWidget(self.manual_control_checkbox)
+
+        # Basemap source (label for display)
+        self.basemap_label = QLabel("Basemap:")
         basemap_layout = QHBoxLayout()
-        basemap_layout.addWidget(QLabel("Basemap:"))
+        basemap_layout.addWidget(self.basemap_label)
 
         self.basemap_combo = QComboBox()
         for source_key, source_config in self.tile_sources.items():
@@ -269,6 +286,15 @@ class BatchDialog(QDialog):
         basemap_layout.addStretch()
         layout.addLayout(basemap_layout)
 
+        # Auto basemap indicator
+        self.auto_basemap_label = QLabel("(AI will select best basemap per image)")
+        self.auto_basemap_label.setStyleSheet("color: #080; font-style: italic;")
+        layout.addWidget(self.auto_basemap_label)
+
+        # Match quality (label for display)
+        self.quality_label = QLabel("Quality:")
+        quality_layout = QHBoxLayout()
+        quality_layout.addWidget(self.quality_label)
         # Match quality
         quality_layout = QHBoxLayout()
         quality_layout.addWidget(QLabel("Quality:"))
@@ -283,6 +309,31 @@ class BatchDialog(QDialog):
 
         quality_layout.addStretch()
         layout.addLayout(quality_layout)
+
+        # Auto quality indicator
+        self.auto_quality_label = QLabel("(Will try strict first, then relax until match found)")
+        self.auto_quality_label.setStyleSheet("color: #080; font-style: italic;")
+        layout.addWidget(self.auto_quality_label)
+
+        # Set initial state (automatic mode - controls disabled)
+        self._on_manual_control_changed()
+
+        group.setLayout(layout)
+        return group
+
+    def _on_manual_control_changed(self):
+        """Handle manual control checkbox state change."""
+        manual_mode = self.manual_control_checkbox.isChecked()
+
+        # Enable/disable manual controls
+        self.basemap_combo.setEnabled(manual_mode)
+        self.basemap_label.setEnabled(manual_mode)
+        self.quality_combo.setEnabled(manual_mode)
+        self.quality_label.setEnabled(manual_mode)
+
+        # Show/hide automatic mode indicators
+        self.auto_basemap_label.setVisible(not manual_mode)
+        self.auto_quality_label.setVisible(not manual_mode)
 
         group.setLayout(layout)
         return group
@@ -650,12 +701,23 @@ class BatchDialog(QDialog):
         else:
             output_dir = None
 
+        # Determine automatic vs manual mode
+        manual_mode = self.manual_control_checkbox.isChecked()
+
         config = BatchConfig(
             api_provider=provider,
             api_key=self.api_key_edit.text().strip(),
             model_key=model_key,
             output_directory=output_dir,
             output_suffix=self.suffix_edit.text(),
+            # Automatic mode settings (inverted from manual_mode)
+            auto_basemap=not manual_mode,
+            auto_quality=not manual_mode,
+            # Manual settings (used when auto modes are disabled)
+            basemap_source=self.basemap_combo.currentData(),
+            quality_preset=self.quality_combo.currentData(),
+            # Never auto-load results in batch mode
+            auto_load_result=False,
             basemap_source=self.basemap_combo.currentData(),
             quality_preset=self.quality_combo.currentData(),
         )
@@ -745,6 +807,23 @@ class BatchDialog(QDialog):
         self.model_combo.setEnabled(not processing)
         self.api_key_edit.setEnabled(not processing)
         self.remember_key_checkbox.setEnabled(not processing)
+        self.manual_control_checkbox.setEnabled(not processing)
+        self.output_dir_edit.setEnabled(not processing)
+        self.suffix_edit.setEnabled(not processing)
+
+        # Basemap and quality controls depend on manual control state when not processing
+        if not processing:
+            manual_mode = self.manual_control_checkbox.isChecked()
+            self.basemap_combo.setEnabled(manual_mode)
+            self.basemap_label.setEnabled(manual_mode)
+            self.quality_combo.setEnabled(manual_mode)
+            self.quality_label.setEnabled(manual_mode)
+        else:
+            self.basemap_combo.setEnabled(False)
+            self.basemap_label.setEnabled(False)
+            self.quality_combo.setEnabled(False)
+            self.quality_label.setEnabled(False)
+
         self.basemap_combo.setEnabled(not processing)
         self.quality_combo.setEnabled(not processing)
         self.output_dir_edit.setEnabled(not processing)

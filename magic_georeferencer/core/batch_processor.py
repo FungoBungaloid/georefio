@@ -63,6 +63,17 @@ class BatchItemResult:
     distribution_quality: float = 0.0
 
 
+# Quality presets in order from strictest to most permissive
+QUALITY_PRESETS_ORDER = ['strict', 'balanced', 'permissive', 'very_permissive']
+
+CONFIDENCE_THRESHOLDS = {
+    'strict': 0.85,
+    'balanced': 0.70,
+    'permissive': 0.55,
+    'very_permissive': 0.20
+}
+
+
 @dataclass
 class BatchConfig:
     """Configuration for batch processing."""
@@ -75,6 +86,11 @@ class BatchConfig:
     output_directory: Optional[Path] = None  # None = same as input
     output_suffix: str = "_georef"
 
+    # Automatic mode settings (default: fully automatic)
+    auto_basemap: bool = True  # Use AI-recommended basemap per image
+    auto_quality: bool = True  # Use progressive quality backoff
+
+    # Manual matching settings (used when auto modes are disabled)
     # Matching settings
     basemap_source: str = "osm_standard"
     quality_preset: str = "balanced"
@@ -90,6 +106,7 @@ class BatchConfig:
     # Processing settings
     max_image_dimension: int = 4096  # Max dimension for processing
     zoom_range: int = 2  # Zoom levels to try around optimal
+    auto_load_result: bool = False  # Don't auto-load into QGIS by default
 
 
 @dataclass
@@ -298,6 +315,16 @@ class BatchProcessor:
         # Get target CRS
         target_crs = QgsCoordinateReferenceSystem(config.target_crs)
 
+        # Log automatic mode settings
+        if config.auto_basemap:
+            self.log("Automatic basemap selection: ENABLED (AI will choose best basemap per image)")
+        else:
+            self.log(f"Automatic basemap selection: DISABLED (using {config.basemap_source})")
+
+        if config.auto_quality:
+            self.log("Progressive quality backoff: ENABLED (strict -> balanced -> permissive -> very_permissive)")
+        else:
+            self.log(f"Progressive quality backoff: DISABLED (using {config.quality_preset})")
         # Get confidence threshold from quality preset
         confidence_thresholds = {
             'strict': 0.85,
@@ -373,6 +400,10 @@ class BatchProcessor:
         config: BatchConfig,
         vision_client: VisionAPIClient,
         target_crs: 'QgsCoordinateReferenceSystem',
+        progress: BatchProgress
+    ) -> BatchItemResult:
+        """
+        Process a single image with automatic basemap selection and progressive quality backoff.
         confidence_threshold: float,
         progress: BatchProgress
     ) -> BatchItemResult:
@@ -417,6 +448,17 @@ class BatchProcessor:
             result.bounding_box = bbox
             self.log(f"    Location: ({bbox.center_lat:.4f}, {bbox.center_lon:.4f})")
             self.log(f"    Extent: ~{bbox.to_extent_meters()/1000:.1f} km")
+            self.log(f"    Recommended basemap: {bbox.recommended_basemap}")
+            self.log(f"    Reasoning: {bbox.reasoning[:100]}...")
+
+            # Determine which basemap to use
+            if config.auto_basemap:
+                basemap_source = bbox.recommended_basemap
+                self.log(f"    Using AI-recommended basemap: {basemap_source}")
+            else:
+                basemap_source = config.basemap_source
+                self.log(f"    Using manual basemap: {basemap_source}")
+
             self.log(f"    Reasoning: {bbox.reasoning[:100]}...")
 
             # Step 2: Load and prepare source image
@@ -447,6 +489,81 @@ class BatchProcessor:
             extent_meters = bbox.to_extent_meters()
             base_zoom = self.tile_fetcher.calculate_optimal_zoom(extent_meters, 832)
 
+            # Step 3 & 4: Fetch tiles and run matching with progressive quality backoff
+            progress.current_step = "Fetching tiles and matching..."
+            self.update_progress(progress)
+            result.status = BatchItemStatus.MATCHING
+
+            self.log(f"  Step 3-4: Fetching tiles and matching...")
+            self.log(f"    Extent: {extent_meters:.0f}m, Base zoom: {base_zoom}")
+
+            # Determine quality presets to try
+            if config.auto_quality:
+                # Progressive backoff: try from strict to very_permissive
+                quality_presets_to_try = QUALITY_PRESETS_ORDER.copy()
+                self.log(f"    Using progressive quality backoff: {' -> '.join(quality_presets_to_try)}")
+            else:
+                # Manual mode: use only the configured preset
+                quality_presets_to_try = [config.quality_preset]
+                self.log(f"    Using manual quality: {config.quality_preset}")
+
+            # Try matching with progressive quality backoff
+            match_result = None
+            ref_image = None
+            ref_extent = None
+            best_zoom = base_zoom
+            successful_preset = None
+
+            for preset in quality_presets_to_try:
+                confidence_threshold = CONFIDENCE_THRESHOLDS[preset]
+                self.log(f"    Trying {preset} quality (threshold: {confidence_threshold})...")
+
+                try:
+                    # Run multi-zoom matching
+                    match_result_attempt, ref_image_attempt, ref_extent_attempt, best_zoom_attempt = \
+                        self.matcher.match_multi_zoom(
+                            image_src=source_image,
+                            center_lat=bbox.center_lat,
+                            center_lon=bbox.center_lon,
+                            extent_meters=extent_meters,
+                            extent_dimension='horizontal',
+                            tile_fetcher=self.tile_fetcher,
+                            basemap_source=basemap_source,
+                            base_zoom=base_zoom,
+                            zoom_range=config.zoom_range
+                        )
+
+                    # Filter matches by confidence
+                    filtered_result = self.matcher.filter_matches(
+                        match_result_attempt,
+                        confidence_threshold=confidence_threshold,
+                        min_gcps=config.min_gcps
+                    )
+
+                    num_matches = filtered_result.num_matches()
+                    self.log(f"      Found {num_matches} matches at {preset} quality")
+
+                    if num_matches >= config.min_gcps:
+                        # Success! Use these results
+                        match_result = filtered_result
+                        ref_image = ref_image_attempt
+                        ref_extent = ref_extent_attempt
+                        best_zoom = best_zoom_attempt
+                        successful_preset = preset
+                        self.log(f"    ✓ Success with {preset} quality ({num_matches} GCPs)")
+                        break
+                    else:
+                        self.log(f"      Insufficient matches, trying next quality level...")
+
+                except Exception as e:
+                    self.log(f"      Matching failed: {e}")
+                    continue
+
+            # Check if we got a successful match
+            if match_result is None or match_result.num_matches() < config.min_gcps:
+                raise ValueError(
+                    f"Could not find sufficient matches at any quality level "
+                    f"(minimum {config.min_gcps} required)"
             self.log(f"    Extent: {extent_meters:.0f}m, Base zoom: {base_zoom}")
 
             # Step 4: Run multi-zoom matching
@@ -538,6 +655,26 @@ class BatchProcessor:
             self.log(f"    Transform: {transform_type}")
             self.log(f"    Output: {output_path}")
 
+            # Run georeferencing (without auto-loading into QGIS)
+            # Temporarily disable auto-load in georeferencer
+            original_iface = self.georeferencer.iface
+            if not config.auto_load_result:
+                self.georeferencer.iface = None  # Disable auto-load
+
+            try:
+                success, message = self.georeferencer.georeference_image(
+                    source_image_path=image_path,
+                    gcps=gcps,
+                    output_path=output_path,
+                    target_crs=target_crs,
+                    transform_type=transform_type,
+                    resampling=config.resampling,
+                    compression=config.compression,
+                    progress_callback=None  # Don't use nested progress
+                )
+            finally:
+                # Restore original iface
+                self.georeferencer.iface = original_iface
             # Run georeferencing
             success, message = self.georeferencer.georeference_image(
                 source_image_path=image_path,
@@ -557,6 +694,7 @@ class BatchProcessor:
             result.status = BatchItemStatus.COMPLETED
             result.processing_time = time.time() - item_start_time
 
+            self.log(f"  ✓ Completed in {result.processing_time:.1f}s (basemap: {basemap_source}, quality: {successful_preset})")
             self.log(f"  ✓ Completed in {result.processing_time:.1f}s")
 
         except Exception as e:

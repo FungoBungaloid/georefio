@@ -87,6 +87,16 @@ MODELS_BY_PROVIDER = {
 }
 
 
+# Available basemap sources (must match keys in tile_sources.json)
+BASEMAP_OPTIONS = {
+    "osm_standard": "OpenStreetMap Standard - best for road maps, city maps, labeled features",
+    "esri_world_imagery": "ESRI World Imagery - best for aerial photos, satellite imagery, natural features",
+    "osm_humanitarian": "OpenStreetMap Humanitarian - best for high contrast, simplified features, developing regions"
+}
+
+DEFAULT_BASEMAP = "osm_standard"
+
+
 @dataclass
 class BoundingBoxEstimate:
     """Result of geographic bounding box estimation."""
@@ -95,6 +105,7 @@ class BoundingBoxEstimate:
     max_lon: float
     max_lat: float
     reasoning: str
+    recommended_basemap: str = DEFAULT_BASEMAP  # Recommended basemap source key
     confidence: Optional[str] = None  # Optional confidence level from model
 
     @property
@@ -152,7 +163,7 @@ class BoundingBoxEstimate:
 
 
 # System prompt for geographic analysis
-VISION_SYSTEM_PROMPT = """You are a geographic analysis expert. Your task is to analyze images (maps, aerial photos, sketches, historical documents) and estimate their geographic location.
+VISION_SYSTEM_PROMPT = """You are a geographic analysis expert. Your task is to analyze images (maps, aerial photos, sketches, historical documents) and estimate their geographic location, and recommend the best reference basemap for matching."""
 
 Analyze the image for geographic clues including:
 - Text labels (city names, street names, landmarks, region names)
@@ -164,6 +175,15 @@ Analyze the image for geographic clues including:
 - Compass roses or north arrows
 - Administrative boundaries
 
+Based on your analysis, provide a bounding box estimate in WGS84 coordinates (EPSG:4326) and recommend the best basemap for feature matching.
+
+IMPORTANT: You MUST respond with ONLY valid JSON in this exact format, with no additional text before or after:
+{"min_lon": <number>, "min_lat": <number>, "max_lon": <number>, "max_lat": <number>, "recommended_basemap": "<basemap_key>", "reasoning": "<explanation>"}
+
+Basemap options (choose the key that best matches your image type):
+- "osm_standard": OpenStreetMap Standard - best for road maps, city maps, street plans, maps with labeled features, urban areas
+- "esri_world_imagery": ESRI World Imagery - best for aerial photographs, satellite imagery, natural landscapes, rural areas, terrain features
+- "osm_humanitarian": OpenStreetMap Humanitarian - best for high-contrast needs, simplified features, historical maps with faded colors, developing regions
 Based on your analysis, provide a bounding box estimate in WGS84 coordinates (EPSG:4326).
 
 IMPORTANT: You MUST respond with ONLY valid JSON in this exact format, with no additional text before or after:
@@ -176,6 +196,8 @@ Guidelines:
 - If uncertain, provide a larger regional bounding box and explain in reasoning
 - min_lon/max_lon: West/East bounds (-180 to 180)
 - min_lat/max_lat: South/North bounds (-90 to 90)
+- Choose osm_standard for maps/drawings, esri_world_imagery for photos, osm_humanitarian for old/faded documents
+- Reasoning should be concise (1-2 sentences) explaining key identifying features and basemap choice"""
 - Reasoning should be concise (1-2 sentences) explaining key identifying features"""
 
 
@@ -440,12 +462,19 @@ class VisionAPIClient:
             except (TypeError, ValueError):
                 raise ValueError(f"Invalid value for {field}: {data[field]}")
 
+        # Parse recommended basemap (with fallback to default)
+        recommended_basemap = data.get('recommended_basemap', DEFAULT_BASEMAP)
+        if recommended_basemap not in BASEMAP_OPTIONS:
+            # If model returned invalid basemap, use default
+            recommended_basemap = DEFAULT_BASEMAP
+
         return BoundingBoxEstimate(
             min_lon=data['min_lon'],
             min_lat=data['min_lat'],
             max_lon=data['max_lon'],
             max_lat=data['max_lat'],
             reasoning=data.get('reasoning', 'No reasoning provided'),
+            recommended_basemap=recommended_basemap,
             confidence=data.get('confidence')
         )
 
