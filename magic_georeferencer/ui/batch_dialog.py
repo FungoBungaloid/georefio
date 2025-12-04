@@ -295,9 +295,6 @@ class BatchDialog(QDialog):
         self.quality_label = QLabel("Quality:")
         quality_layout = QHBoxLayout()
         quality_layout.addWidget(self.quality_label)
-        # Match quality
-        quality_layout = QHBoxLayout()
-        quality_layout.addWidget(QLabel("Quality:"))
 
         self.quality_combo = QComboBox()
         self.quality_combo.addItem("Strict (0.85)", "strict")
@@ -334,9 +331,6 @@ class BatchDialog(QDialog):
         # Show/hide automatic mode indicators
         self.auto_basemap_label.setVisible(not manual_mode)
         self.auto_quality_label.setVisible(not manual_mode)
-
-        group.setLayout(layout)
-        return group
 
     def _create_output_group(self) -> QGroupBox:
         """Create output configuration group."""
@@ -718,8 +712,6 @@ class BatchDialog(QDialog):
             quality_preset=self.quality_combo.currentData(),
             # Never auto-load results in batch mode
             auto_load_result=False,
-            basemap_source=self.basemap_combo.currentData(),
-            quality_preset=self.quality_combo.currentData(),
         )
 
         # Update UI for processing state
@@ -823,11 +815,6 @@ class BatchDialog(QDialog):
             self.basemap_label.setEnabled(False)
             self.quality_combo.setEnabled(False)
             self.quality_label.setEnabled(False)
-
-        self.basemap_combo.setEnabled(not processing)
-        self.quality_combo.setEnabled(not processing)
-        self.output_dir_edit.setEnabled(not processing)
-        self.suffix_edit.setEnabled(not processing)
 
         # Toggle buttons
         self.start_btn.setVisible(not processing)
