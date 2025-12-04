@@ -163,7 +163,7 @@ class BoundingBoxEstimate:
 
 
 # System prompt for geographic analysis
-VISION_SYSTEM_PROMPT = """You are a geographic analysis expert. Your task is to analyze images (maps, aerial photos, sketches, historical documents) and estimate their geographic location, and recommend the best reference basemap for matching.
+VISION_SYSTEM_PROMPT = """You are a geographic analysis expert. Your task is to analyze images (maps, aerial photos, sketches, historical documents) and estimate their geographic location, and recommend the best reference basemap for matching."""
 
 Analyze the image for geographic clues including:
 - Text labels (city names, street names, landmarks, region names)
@@ -184,6 +184,10 @@ Basemap options (choose the key that best matches your image type):
 - "osm_standard": OpenStreetMap Standard - best for road maps, city maps, street plans, maps with labeled features, urban areas
 - "esri_world_imagery": ESRI World Imagery - best for aerial photographs, satellite imagery, natural landscapes, rural areas, terrain features
 - "osm_humanitarian": OpenStreetMap Humanitarian - best for high-contrast needs, simplified features, historical maps with faded colors, developing regions
+Based on your analysis, provide a bounding box estimate in WGS84 coordinates (EPSG:4326).
+
+IMPORTANT: You MUST respond with ONLY valid JSON in this exact format, with no additional text before or after:
+{"min_lon": <number>, "min_lat": <number>, "max_lon": <number>, "max_lat": <number>, "reasoning": "<explanation>"}
 
 Guidelines:
 - Be conservative with the bounding box - it's better to be slightly larger than to miss the area
@@ -194,6 +198,7 @@ Guidelines:
 - min_lat/max_lat: South/North bounds (-90 to 90)
 - Choose osm_standard for maps/drawings, esri_world_imagery for photos, osm_humanitarian for old/faded documents
 - Reasoning should be concise (1-2 sentences) explaining key identifying features and basemap choice"""
+- Reasoning should be concise (1-2 sentences) explaining key identifying features"""
 
 
 class VisionAPIClient:

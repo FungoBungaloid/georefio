@@ -91,6 +91,7 @@ class BatchConfig:
     auto_quality: bool = True  # Use progressive quality backoff
 
     # Manual matching settings (used when auto modes are disabled)
+    # Matching settings
     basemap_source: str = "osm_standard"
     quality_preset: str = "balanced"
     confidence_threshold: float = 0.70
@@ -324,6 +325,17 @@ class BatchProcessor:
             self.log("Progressive quality backoff: ENABLED (strict -> balanced -> permissive -> very_permissive)")
         else:
             self.log(f"Progressive quality backoff: DISABLED (using {config.quality_preset})")
+        # Get confidence threshold from quality preset
+        confidence_thresholds = {
+            'strict': 0.85,
+            'balanced': 0.70,
+            'permissive': 0.55,
+            'very_permissive': 0.20
+        }
+        confidence_threshold = confidence_thresholds.get(
+            config.quality_preset,
+            config.confidence_threshold
+        )
 
         # Process each image
         for i, image_path in enumerate(image_paths):
@@ -355,6 +367,7 @@ class BatchProcessor:
                 config=config,
                 vision_client=vision_client,
                 target_crs=target_crs,
+                confidence_threshold=confidence_threshold,
                 progress=progress
             )
 
@@ -391,12 +404,18 @@ class BatchProcessor:
     ) -> BatchItemResult:
         """
         Process a single image with automatic basemap selection and progressive quality backoff.
+        confidence_threshold: float,
+        progress: BatchProgress
+    ) -> BatchItemResult:
+        """
+        Process a single image.
 
         Args:
             image_path: Path to image
             config: Batch configuration
             vision_client: Vision API client
             target_crs: Target CRS for output
+            confidence_threshold: Confidence threshold for matching
             progress: Progress object for updates
 
         Returns:
@@ -440,6 +459,8 @@ class BatchProcessor:
                 basemap_source = config.basemap_source
                 self.log(f"    Using manual basemap: {basemap_source}")
 
+            self.log(f"    Reasoning: {bbox.reasoning[:100]}...")
+
             # Step 2: Load and prepare source image
             progress.current_step = "Loading source image..."
             self.update_progress(progress)
@@ -456,6 +477,13 @@ class BatchProcessor:
             # Calculate aspect ratio
             src_height, src_width = source_image.shape[:2]
             source_aspect_ratio = src_width / src_height
+
+            # Step 3: Fetch reference tiles
+            progress.current_step = "Fetching reference tiles..."
+            self.update_progress(progress)
+            result.status = BatchItemStatus.FETCHING_TILES
+
+            self.log(f"  Step 3: Fetching reference tiles...")
 
             # Calculate extent in meters and optimal zoom
             extent_meters = bbox.to_extent_meters()
@@ -536,6 +564,40 @@ class BatchProcessor:
                 raise ValueError(
                     f"Could not find sufficient matches at any quality level "
                     f"(minimum {config.min_gcps} required)"
+            self.log(f"    Extent: {extent_meters:.0f}m, Base zoom: {base_zoom}")
+
+            # Step 4: Run multi-zoom matching
+            progress.current_step = "Matching images..."
+            self.update_progress(progress)
+            result.status = BatchItemStatus.MATCHING
+
+            self.log(f"  Step 4: Running image matching...")
+
+            match_result, ref_image, ref_extent, best_zoom = self.matcher.match_multi_zoom(
+                image_src=source_image,
+                center_lat=bbox.center_lat,
+                center_lon=bbox.center_lon,
+                extent_meters=extent_meters,
+                extent_dimension='horizontal',  # Use horizontal as default
+                tile_fetcher=self.tile_fetcher,
+                basemap_source=config.basemap_source,
+                base_zoom=base_zoom,
+                zoom_range=config.zoom_range
+            )
+
+            # Filter matches by confidence
+            match_result = self.matcher.filter_matches(
+                match_result,
+                confidence_threshold=confidence_threshold,
+                min_gcps=config.min_gcps
+            )
+
+            num_matches = match_result.num_matches()
+            self.log(f"    Found {num_matches} matches (confidence >= {confidence_threshold})")
+
+            if num_matches < config.min_gcps:
+                raise ValueError(
+                    f"Insufficient matches: {num_matches} (minimum {config.min_gcps} required)"
                 )
 
             # Store match metrics
@@ -613,6 +675,17 @@ class BatchProcessor:
             finally:
                 # Restore original iface
                 self.georeferencer.iface = original_iface
+            # Run georeferencing
+            success, message = self.georeferencer.georeference_image(
+                source_image_path=image_path,
+                gcps=gcps,
+                output_path=output_path,
+                target_crs=target_crs,
+                transform_type=transform_type,
+                resampling=config.resampling,
+                compression=config.compression,
+                progress_callback=None  # Don't use nested progress
+            )
 
             if not success:
                 raise RuntimeError(f"Georeferencing failed: {message}")
@@ -622,6 +695,7 @@ class BatchProcessor:
             result.processing_time = time.time() - item_start_time
 
             self.log(f"  ✓ Completed in {result.processing_time:.1f}s (basemap: {basemap_source}, quality: {successful_preset})")
+            self.log(f"  ✓ Completed in {result.processing_time:.1f}s")
 
         except Exception as e:
             result.status = BatchItemStatus.FAILED
