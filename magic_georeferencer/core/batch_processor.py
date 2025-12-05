@@ -80,7 +80,7 @@ class BatchConfig:
     # API settings
     api_provider: APIProvider = APIProvider.OPENAI
     api_key: str = ""
-    model_key: str = "gpt-4o-mini"
+    model_key: str = "gpt-5-nano-2025-08-07"
 
     # Output settings
     output_directory: Optional[Path] = None  # None = same as input

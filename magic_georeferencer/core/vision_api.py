@@ -50,30 +50,30 @@ class VisionModel:
 
 # Available vision models
 VISION_MODELS = {
-    "gpt-4.1-2025-04-14": VisionModel(
+    "gpt-5-2025-08-07": VisionModel(
         provider=APIProvider.OPENAI,
-        model_id="gpt-4.1-2025-04-14",
-        display_name="GPT-4.1",
+        model_id="gpt-5-2025-08-07",
+        display_name="GPT-5",
         cost_per_image_low=0.01,
         cost_per_image_high=0.03
     ),
-    "gpt-4.1-nano-2025-04-14": VisionModel(
+    "gpt-5-nano-2025-08-07": VisionModel(
         provider=APIProvider.OPENAI,
-        model_id="gpt-4.1-nano-2025-04-14",
-        display_name="GPT-4.1 Nano",
+        model_id="gpt-5-nano-2025-08-07",
+        display_name="GPT-5 Nano",
         cost_per_image_low=0.001,
         cost_per_image_high=0.005
     ),
-    "claude-sonnet-4-5-20250514": VisionModel(
+    "claude-sonnet-4-5-20250929": VisionModel(
         provider=APIProvider.ANTHROPIC,
-        model_id="claude-sonnet-4-5-20250514",
+        model_id="claude-sonnet-4-5-20250929",
         display_name="Claude Sonnet 4.5",
         cost_per_image_low=0.01,
         cost_per_image_high=0.03
     ),
-    "claude-haiku-4-5-20250514": VisionModel(
+    "claude-haiku-4-5-20251001": VisionModel(
         provider=APIProvider.ANTHROPIC,
-        model_id="claude-haiku-4-5-20250514",
+        model_id="claude-haiku-4-5-20251001",
         display_name="Claude Haiku 4.5",
         cost_per_image_low=0.002,
         cost_per_image_high=0.008
@@ -82,8 +82,8 @@ VISION_MODELS = {
 
 # Models grouped by provider for UI
 MODELS_BY_PROVIDER = {
-    APIProvider.OPENAI: ["gpt-4.1-2025-04-14", "gpt-4.1-nano-2025-04-14"],
-    APIProvider.ANTHROPIC: ["claude-sonnet-4-5-20250514", "claude-haiku-4-5-20250514"],
+    APIProvider.OPENAI: ["gpt-5-2025-08-07", "gpt-5-nano-2025-08-07"],
+    APIProvider.ANTHROPIC: ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001"],
 }
 
 
