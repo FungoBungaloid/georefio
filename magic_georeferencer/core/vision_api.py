@@ -50,17 +50,17 @@ class VisionModel:
 
 # Available vision models
 VISION_MODELS = {
-    "gpt-4.1-2025-04-14": VisionModel(
+    "gpt-5-2025-08-07": VisionModel(
         provider=APIProvider.OPENAI,
-        model_id="gpt-4.1-2025-04-14",
-        display_name="GPT-4.1",
+        model_id="gpt-5-2025-08-07",
+        display_name="GPT-5",
         cost_per_image_low=0.01,
         cost_per_image_high=0.03
     ),
-    "gpt-4.1-nano-2025-04-14": VisionModel(
+    "gpt-5-nano-2025-08-07": VisionModel(
         provider=APIProvider.OPENAI,
-        model_id="gpt-4.1-nano-2025-04-14",
-        display_name="GPT-4.1 Nano",
+        model_id="gpt-5-nano-2025-08-07",
+        display_name="GPT-5 Nano",
         cost_per_image_low=0.001,
         cost_per_image_high=0.005
     ),
