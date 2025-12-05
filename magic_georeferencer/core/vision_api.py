@@ -64,16 +64,16 @@ VISION_MODELS = {
         cost_per_image_low=0.001,
         cost_per_image_high=0.005
     ),
-    "claude-sonnet-4-5-20250514": VisionModel(
+    "claude-sonnet-4-5-20250929": VisionModel(
         provider=APIProvider.ANTHROPIC,
-        model_id="claude-sonnet-4-5-20250514",
+        model_id="claude-sonnet-4-5-20250929",
         display_name="Claude Sonnet 4.5",
         cost_per_image_low=0.01,
         cost_per_image_high=0.03
     ),
-    "claude-haiku-4-5-20250514": VisionModel(
+    "claude-haiku-4-5-20251001": VisionModel(
         provider=APIProvider.ANTHROPIC,
-        model_id="claude-haiku-4-5-20250514",
+        model_id="claude-haiku-4-5-20251001",
         display_name="Claude Haiku 4.5",
         cost_per_image_low=0.002,
         cost_per_image_high=0.008
