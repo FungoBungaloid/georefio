@@ -50,31 +50,31 @@ class VisionModel:
 
 # Available vision models
 VISION_MODELS = {
-    "gpt-4o": VisionModel(
+    "gpt-4.1-2025-04-14": VisionModel(
         provider=APIProvider.OPENAI,
-        model_id="gpt-4o",
-        display_name="GPT-4o",
+        model_id="gpt-4.1-2025-04-14",
+        display_name="GPT-4.1",
         cost_per_image_low=0.01,
         cost_per_image_high=0.03
     ),
-    "gpt-4o-mini": VisionModel(
+    "gpt-4.1-nano-2025-04-14": VisionModel(
         provider=APIProvider.OPENAI,
-        model_id="gpt-4o-mini",
-        display_name="GPT-4o Mini",
+        model_id="gpt-4.1-nano-2025-04-14",
+        display_name="GPT-4.1 Nano",
         cost_per_image_low=0.001,
         cost_per_image_high=0.005
     ),
-    "claude-sonnet-4-20250514": VisionModel(
+    "claude-sonnet-4-5-20250514": VisionModel(
         provider=APIProvider.ANTHROPIC,
-        model_id="claude-sonnet-4-20250514",
-        display_name="Claude Sonnet 4",
+        model_id="claude-sonnet-4-5-20250514",
+        display_name="Claude Sonnet 4.5",
         cost_per_image_low=0.01,
         cost_per_image_high=0.03
     ),
-    "claude-haiku-3-5-20241022": VisionModel(
+    "claude-haiku-4-5-20250514": VisionModel(
         provider=APIProvider.ANTHROPIC,
-        model_id="claude-3-5-haiku-20241022",
-        display_name="Claude 3.5 Haiku",
+        model_id="claude-haiku-4-5-20250514",
+        display_name="Claude Haiku 4.5",
         cost_per_image_low=0.002,
         cost_per_image_high=0.008
     ),
@@ -82,8 +82,8 @@ VISION_MODELS = {
 
 # Models grouped by provider for UI
 MODELS_BY_PROVIDER = {
-    APIProvider.OPENAI: ["gpt-4o", "gpt-4o-mini"],
-    APIProvider.ANTHROPIC: ["claude-sonnet-4-20250514", "claude-haiku-3-5-20241022"],
+    APIProvider.OPENAI: ["gpt-4.1-2025-04-14", "gpt-4.1-nano-2025-04-14"],
+    APIProvider.ANTHROPIC: ["claude-sonnet-4-5-20250514", "claude-haiku-4-5-20250514"],
 }
 
 
@@ -164,43 +164,41 @@ class BoundingBoxEstimate:
 
 # System prompt for geographic analysis
 VISION_SYSTEM_PROMPT = (
-    "You are a geographic analysis expert. Your task is to analyze images "
-    "(maps, aerial photos, sketches, historical documents) and estimate their "
-    "geographic location, and recommend the best reference basemap for matching.\n\n"
-    "Analyze the image for geographic clues including:\n"
-    "- Text labels (city names, street names, landmarks, region names)\n"
-    "- Coastlines, rivers, lakes, and other water bodies\n"
-    "- Street patterns and road networks\n"
-    "- Distinctive landmarks (mountains, buildings, monuments)\n"
-    "- Cartographic style and era indicators\n"
-    "- Scale indicators or distance markers\n"
-    "- Compass roses or north arrows\n"
-    "- Administrative boundaries\n\n"
-    "Based on your analysis, provide a bounding box estimate in WGS84 coordinates "
-    "(EPSG:4326) and recommend the best basemap for feature matching.\n\n"
+    "You are a geographic analysis expert specializing in precise location identification. "
+    "Your task is to analyze images (maps, aerial photos, sketches, historical documents) "
+    "and determine the EXACT geographic bounding box they depict.\n\n"
+    "CRITICAL: You must identify the SPECIFIC area shown in the image, not a general region. "
+    "If the image shows a neighborhood, identify THAT neighborhood. If it shows a specific "
+    "intersection or landmark, identify THAT exact location.\n\n"
+    "Analyze the image systematically for geographic identifiers:\n"
+    "1. TEXT LABELS: Read ALL visible text - street names, place names, building labels, "
+    "   district names, postal codes. These are your most reliable identifiers.\n"
+    "2. WATER FEATURES: Rivers, lakes, coastlines, harbors - match their exact shapes.\n"
+    "3. ROAD NETWORKS: Highway interchanges, distinctive intersections, road patterns.\n"
+    "4. LANDMARKS: Recognizable buildings, monuments, bridges, stadiums.\n"
+    "5. BOUNDARIES: Administrative borders, park boundaries, coastlines.\n"
+    "6. SCALE INDICATORS: Use any scale bars to estimate the area's extent.\n\n"
+    "BOUNDING BOX REQUIREMENTS:\n"
+    "- The bounding box must tightly encompass ONLY the area shown in the image.\n"
+    "- Add a small margin (~5-10%) to ensure the edges are captured, but no more.\n"
+    "- Do NOT return a bounding box for a larger region (city, country) when the image "
+    "  shows a smaller area (neighborhood, district).\n"
+    "- If the image shows a 2km x 2km area, your bounding box should be approximately that size.\n\n"
     "IMPORTANT: You MUST respond with ONLY valid JSON in this exact format, "
     "with no additional text before or after:\n"
     '{"min_lon": <number>, "min_lat": <number>, "max_lon": <number>, '
     '"max_lat": <number>, "recommended_basemap": "<basemap_key>", '
     '"reasoning": "<explanation>"}\n\n'
-    "Basemap options (choose the key that best matches your image type):\n"
-    '- "osm_standard": OpenStreetMap Standard - best for road maps, city maps, '
-    "street plans, maps with labeled features, urban areas\n"
-    '- "esri_world_imagery": ESRI World Imagery - best for aerial photographs, '
-    "satellite imagery, natural landscapes, rural areas, terrain features\n"
-    '- "osm_humanitarian": OpenStreetMap Humanitarian - best for high-contrast '
-    "needs, simplified features, historical maps with faded colors, developing regions\n\n"
-    "Guidelines:\n"
-    "- Be conservative with the bounding box. A slightly larger box is better than missing the area\n"
-    "- If you can identify a specific city or region, the bounding box should cover that area\n"
-    "- For maps with clear boundaries shown, estimate based on those boundaries\n"
-    "- If uncertain, provide a larger regional bounding box and explain in reasoning\n"
+    "Basemap options:\n"
+    '- "osm_standard": OpenStreetMap - for maps, street plans, urban areas with roads/buildings\n'
+    '- "esri_world_imagery": Satellite imagery - for aerial photos, natural features, rural areas\n'
+    '- "osm_humanitarian": High-contrast OSM - for historical/faded maps needing clear features\n\n'
+    "Coordinate format:\n"
     "- min_lon/max_lon: West/East bounds (-180 to 180)\n"
-    "- min_lat/max_lat: South/North bounds (-90 to 90)\n"
-    "- Choose osm_standard for maps/drawings, esri_world_imagery for photos, "
-    "osm_humanitarian for old/faded documents\n"
-    "- Reasoning should be concise (1-2 sentences) explaining key identifying "
-    "features and basemap choice"
+    "- min_lat/max_lat: South/North bounds (-90 to 90)\n\n"
+    "Reasoning: Briefly explain the key features you identified that determined the location "
+    "(e.g., 'Identified intersection of Main St and 5th Ave in downtown Portland based on "
+    "visible street labels and distinctive river bend')."
 )
 
 

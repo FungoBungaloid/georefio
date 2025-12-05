@@ -162,10 +162,18 @@ class MagicGeoreferencer:
         try:
             # Lazy import to speed up plugin loading
             from .ui.main_dialog import MagicGeoreferencerDialog
+            from .core.model_manager import ModelManager
 
-            # Create the dialog if it doesn't exist
+            # Initialize shared model manager if not already done
+            if self._model_manager is None:
+                self._model_manager = ModelManager()
+
+            # Create the dialog if it doesn't exist, passing the shared model manager
             if self.dialog is None:
-                self.dialog = MagicGeoreferencerDialog(self.iface)
+                self.dialog = MagicGeoreferencerDialog(
+                    self.iface,
+                    model_manager=self._model_manager
+                )
 
             # Show the dialog
             self.dialog.show()
@@ -196,6 +204,7 @@ class MagicGeoreferencer:
         try:
             # Lazy import to speed up plugin loading
             from .ui.batch_dialog import BatchDialog
+            from .ui.progress_dialog import ProgressDialog
             from .core.model_manager import ModelManager
 
             # Initialize model manager if not already done
@@ -204,17 +213,67 @@ class MagicGeoreferencer:
 
                 # Check if weights need to be downloaded
                 if self._model_manager.check_first_run():
+                    # Show download prompt
+                    device_info = self._model_manager.get_device_info()
+
+                    msg_text = (
+                        "The AI model weights (~800 MB) need to be downloaded before processing.\n\n"
+                    )
+                    if device_info.get('cuda_available'):
+                        msg_text += f"CUDA GPU detected: {device_info.get('cuda_device_name', 'Unknown')}\n"
+                        msg_text += "Will use GPU for faster processing.\n\n"
+                    else:
+                        msg_text += "No CUDA GPU detected. Will use CPU (slower).\n\n"
+
+                    msg_text += "Would you like to download the model weights now?"
+
                     result = QMessageBox.question(
                         self.iface.mainWindow(),
                         "Model Weights Required",
-                        "The AI model weights need to be downloaded before batch processing.\n\n"
-                        "Would you like to open the main dialog to download them first?",
+                        msg_text,
                         QMessageBox.Yes | QMessageBox.No,
                         QMessageBox.Yes
                     )
-                    if result == QMessageBox.Yes:
-                        self.run()  # Open main dialog to download weights
-                    return
+                    if result != QMessageBox.Yes:
+                        return
+
+                    # Download weights with progress dialog
+                    progress = ProgressDialog(self.iface.mainWindow(), "Downloading Model Weights")
+
+                    def progress_callback(status, current, total):
+                        progress.set_status(status)
+                        progress.set_progress(current, total)
+                        from qgis.PyQt.QtCore import QCoreApplication
+                        QCoreApplication.processEvents()
+
+                    progress.show()
+
+                    try:
+                        success, message = self._model_manager.download_weights(progress_callback)
+                        progress.close()
+
+                        if not success:
+                            QMessageBox.critical(
+                                self.iface.mainWindow(),
+                                "Download Failed",
+                                f"Failed to download model weights:\n{message}"
+                            )
+                            return
+
+                        QMessageBox.information(
+                            self.iface.mainWindow(),
+                            "Download Complete",
+                            "Model weights downloaded successfully!"
+                        )
+
+                    except Exception as e:
+                        progress.close()
+                        QMessageBox.critical(
+                            self.iface.mainWindow(),
+                            "Download Error",
+                            f"Error during download:\n{str(e)}"
+                        )
+                        return
 
             # Create the batch dialog if it doesn't exist
             if self.batch_dialog is None:
