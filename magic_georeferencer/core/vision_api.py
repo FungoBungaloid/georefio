@@ -356,8 +356,7 @@ class VisionAPIClient:
                     ]
                 }
             ],
-            "max_completion_tokens": 500,
-            "temperature": 0.1  # Low temperature for more consistent output
+            "max_completion_tokens": 500
         }
 
         headers = {
