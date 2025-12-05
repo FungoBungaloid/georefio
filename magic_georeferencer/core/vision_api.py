@@ -374,8 +374,8 @@ class VisionAPIClient:
                 message = result['choices'][0]['message']
                 content = message.get('content')
 
-                # For reasoning models, content may be None - check for refusal
-                if content is None:
+                # For reasoning models, content may be None or empty - check for refusal
+                if not content:
                     # Check if there's a refusal
                     refusal = message.get('refusal')
                     if refusal:
