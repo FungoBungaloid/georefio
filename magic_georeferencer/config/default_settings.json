@@ -43,27 +43,27 @@
   },
   "batch": {
     "default_api_provider": "openai",
-    "default_model": "gpt-4o-mini",
+    "default_model": "gpt-5-nano-2025-08-07",
     "default_output_suffix": "_georef",
     "max_image_dimension": 4096,
     "zoom_range": 2,
     "vision_api_models": {
-      "gpt-4o": {
+      "gpt-5-2025-08-07": {
         "provider": "openai",
         "cost_per_image_low": 0.01,
         "cost_per_image_high": 0.03
       },
-      "gpt-4o-mini": {
+      "gpt-5-nano-2025-08-07": {
         "provider": "openai",
         "cost_per_image_low": 0.001,
         "cost_per_image_high": 0.005
       },
-      "claude-sonnet-4-20250514": {
+      "claude-sonnet-4-5-20250929": {
         "provider": "anthropic",
         "cost_per_image_low": 0.01,
         "cost_per_image_high": 0.03
       },
-      "claude-haiku-3-5-20241022": {
+      "claude-haiku-4-5-20251001": {
         "provider": "anthropic",
         "cost_per_image_low": 0.002,
         "cost_per_image_high": 0.008

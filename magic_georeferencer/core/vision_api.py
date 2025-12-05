@@ -82,8 +82,8 @@ VISION_MODELS = {
 
 # Models grouped by provider for UI
 MODELS_BY_PROVIDER = {
-    APIProvider.OPENAI: ["gpt-4.1-2025-04-14", "gpt-4.1-nano-2025-04-14"],
-    APIProvider.ANTHROPIC: ["claude-sonnet-4-5-20250514", "claude-haiku-4-5-20250514"],
+    APIProvider.OPENAI: ["gpt-5-2025-08-07", "gpt-5-nano-2025-08-07"],
+    APIProvider.ANTHROPIC: ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001"],
 }
 
 
