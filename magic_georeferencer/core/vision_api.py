@@ -368,7 +368,8 @@ class VisionAPIClient:
         req = urllib.request.Request(url, data=data, headers=headers, method='POST')
 
         try:
-            with urllib.request.urlopen(req, timeout=60) as response:
+            # Reasoning models (GPT-5, o1, o3) can take several minutes
+            with urllib.request.urlopen(req, timeout=300) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 # Handle different response structures (reasoning models may differ)
                 message = result['choices'][0]['message']
