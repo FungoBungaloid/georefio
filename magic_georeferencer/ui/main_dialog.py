@@ -32,19 +32,21 @@ from .progress_dialog import ProgressDialog
 class MagicGeoreferencerDialog(QDialog):
     """Main dialog for Magic Georeferencer"""
 
-    def __init__(self, iface, parent=None):
+    def __init__(self, iface, model_manager=None, parent=None):
         """Initialize dialog.
 
         Args:
             iface: QGIS interface
+            model_manager: Optional shared ModelManager instance
             parent: Parent widget
         """
         super().__init__(parent)
 
         self.iface = iface
         self.source_image_path = None
-        self.model_manager = None
+        self.model_manager = model_manager  # Use provided model manager if given
         self.matcher = None
+        self._model_init_done = False  # Track if model initialization is complete
 
         # Load settings
         config_path = Path(__file__).parent.parent / 'config' / 'default_settings.json'
@@ -76,8 +78,8 @@ class MagicGeoreferencerDialog(QDialog):
         """Override showEvent to ensure model is initialized when dialog is shown"""
         super().showEvent(event)
 
-        # Check if model manager needs to be initialized (e.g., after QGIS restart)
-        if self.model_manager is None:
+        # Only re-initialize if model manager is missing and init wasn't already done
+        if self.model_manager is None and not self._model_init_done:
             from qgis.PyQt.QtCore import QTimer, QCoreApplication
             self.status_label.setText("Initializing AI model...")
             QCoreApplication.processEvents()
@@ -244,8 +246,12 @@ class MagicGeoreferencerDialog(QDialog):
 
     def _init_model_manager(self):
         """Initialize model manager and check for first run"""
+        self._model_init_done = True  # Mark initialization as done
+
         try:
-            self.model_manager = ModelManager()
+            # Only create a new model manager if one wasn't provided
+            if self.model_manager is None:
+                self.model_manager = ModelManager()
 
             if self.model_manager.check_first_run():
                 self.status_label.setText("Ready - Model weights need to be downloaded")
