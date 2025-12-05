@@ -370,7 +370,20 @@ class VisionAPIClient:
         try:
             with urllib.request.urlopen(req, timeout=60) as response:
                 result = json.loads(response.read().decode('utf-8'))
-                return result['choices'][0]['message']['content']
+                # Handle different response structures (reasoning models may differ)
+                message = result['choices'][0]['message']
+                content = message.get('content')
+
+                # For reasoning models, content may be None - check for refusal
+                if content is None:
+                    # Check if there's a refusal
+                    refusal = message.get('refusal')
+                    if refusal:
+                        raise Exception(f"OpenAI model refused request: {refusal}")
+                    # Otherwise, include full response for debugging
+                    raise Exception(f"OpenAI returned empty content. Full response: {json.dumps(result)[:1000]}")
+
+                return content
         except urllib.error.HTTPError as e:
             error_body = e.read().decode('utf-8') if e.fp else ""
             raise Exception(f"OpenAI API error {e.code}: {error_body}")
