@@ -25,7 +25,8 @@
   "georeferencing": {
     "default_transform_type": "auto",
     "default_resampling": "cubic",
-    "default_compression": "LZW",
+    "default_compression": "DEFLATE",
+    "cloud_optimized": true,
     "auto_load_result": true
   },
   "output": {

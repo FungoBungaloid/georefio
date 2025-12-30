@@ -639,7 +639,13 @@ class MagicGeoreferencerDialog(QDialog):
             if self.settings['ui']['show_confidence_viewer']:
                 from .confidence_viewer import ConfidenceViewer
 
-                viewer = ConfidenceViewer(match_result, self)
+                # Pass GCPs and gcp_generator to enable export functionality
+                viewer = ConfidenceViewer(
+                    match_result,
+                    gcps=gcps,
+                    gcp_generator=gcp_generator,
+                    parent=self
+                )
                 result = viewer.exec_()
 
                 # If user cancelled, stop here
@@ -693,6 +699,7 @@ class MagicGeoreferencerDialog(QDialog):
                 transform_type=transform_type,
                 resampling=self.settings['georeferencing']['default_resampling'],
                 compression=self.settings['georeferencing']['default_compression'],
+                cloud_optimized=self.settings['georeferencing'].get('cloud_optimized', True),
                 progress_callback=update_progress
             )
 
@@ -703,9 +710,11 @@ class MagicGeoreferencerDialog(QDialog):
                 project_crs = QgsProject.instance().crs()
                 crs_name = project_crs.authid() if project_crs.isValid() else "EPSG:3857"
 
-                QMessageBox.information(
-                    self,
-                    "Success!",
+                # Ask user if they want to save GCPs
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("Success!")
+                msg_box.setIcon(QMessageBox.Information)
+                msg_box.setText(
                     f"Image georeferenced successfully!\n\n"
                     f"Output: {output_path}\n"
                     f"Output CRS: {crs_name} (project CRS)\n"
@@ -714,6 +723,39 @@ class MagicGeoreferencerDialog(QDialog):
                     f"Transform type: {transform_type}\n\n"
                     f"The georeferenced image has been added to the map."
                 )
+
+                # Add custom buttons
+                save_gcps_btn = msg_box.addButton("Save GCPs...", QMessageBox.ActionRole)
+                ok_btn = msg_box.addButton(QMessageBox.Ok)
+                msg_box.setDefaultButton(ok_btn)
+
+                msg_box.exec_()
+
+                # Check if user clicked Save GCPs
+                if msg_box.clickedButton() == save_gcps_btn:
+                    gcp_filepath, _ = QFileDialog.getSaveFileName(
+                        self,
+                        "Save Control Points",
+                        str(output_path.with_suffix('.points')),
+                        "QGIS Points Files (*.points);;All Files (*)"
+                    )
+                    if gcp_filepath:
+                        if not gcp_filepath.endswith('.points'):
+                            gcp_filepath += '.points'
+                        try:
+                            gcp_generator.export_gcp_file(gcps, Path(gcp_filepath))
+                            QMessageBox.information(
+                                self,
+                                "GCPs Saved",
+                                f"Control points saved to:\n{gcp_filepath}\n\n"
+                                "You can load this file in the QGIS Georeferencer tool for manual editing."
+                            )
+                        except Exception as e:
+                            QMessageBox.warning(
+                                self,
+                                "Save Error",
+                                f"Failed to save control points:\n{str(e)}"
+                            )
 
                 # Update status
                 self.status_label.setText("✓ Georeferencing complete!")

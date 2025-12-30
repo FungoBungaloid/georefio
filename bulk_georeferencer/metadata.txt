@@ -1,0 +1,67 @@
+[general]
+name=Bulk Georeferencer
+qgisMinimumVersion=3.22
+description=Batch georeference multiple images using AI-powered location estimation and feature matching
+version=1.0.0
+author=Magic Georeferencer Team
+email=contact@example.com
+
+about=Batch georeference multiple images automatically using Vision AI for location estimation and MatchAnything for feature matching.
+    .
+    Features:
+    - Batch processing of entire folders of images
+    - Vision AI location estimation (OpenAI GPT-5, Anthropic Claude)
+    - Automatic basemap selection per image
+    - Progressive quality backoff for challenging imagery
+    - Support for pre-geocoded images with loose positioning
+    - Flight path/centroid shapefile input support
+    - Customizable LLM prompts for location extraction
+    - Cloud Optimized GeoTIFF (COG) output with DEFLATE compression
+    - Exportable control points (.points format)
+    .
+    Requirements:
+    - QGIS 3.22 or higher (Windows, macOS, Linux)
+    - Magic Georeferencer plugin (required dependency)
+    - Python 3.9+ (bundled with QGIS)
+    - 8 GB RAM minimum, 16 GB recommended
+    - ~2 GB disk space for model cache
+    - Optional: NVIDIA GPU with CUDA for faster processing
+    - API key for OpenAI or Anthropic (for location estimation)
+    .
+    Supported Input Modes:
+    - Folder of ungeoreferenced images
+    - Images with rough location metadata (EXIF, World files)
+    - Flight path shapefiles with centroids
+    .
+    Platform Support: Works on Windows, macOS, and Linux.
+    .
+    License: Apache License 2.0
+
+tracker=https://github.com/FungoBungaloid/georefio/issues
+repository=https://github.com/FungoBungaloid/georefio
+tags=georeferencing, batch processing, machine learning, AI, automation, image matching, raster, bulk
+
+homepage=https://github.com/FungoBungaloid/georefio
+category=Raster
+icon=icon.png
+experimental=True
+deprecated=False
+
+plugin_dependencies=Magic Georeferencer
+
+changelog=
+    1.0.0 - Initial release
+        - Batch processing with Vision AI location estimation
+        - OpenAI and Anthropic API support
+        - Progressive quality backoff
+        - Auto basemap selection
+        - Support for roughly geocoded images
+        - Flight path shapefile input
+        - Customizable LLM prompts
+        - Cloud Optimized GeoTIFF output
+
+credits=Uses Magic Georeferencer core for feature matching
+    .
+    Vision APIs: OpenAI GPT-5, Anthropic Claude
+    .
+    Co-developed using Claude Code by Anthropic

@@ -41,7 +41,8 @@ class Georeferencer:
         target_crs: QgsCoordinateReferenceSystem,
         transform_type: str = 'polynomial_1',
         resampling: str = 'cubic',
-        compression: str = 'LZW',
+        compression: str = 'DEFLATE',
+        cloud_optimized: bool = True,
         progress_callback: Optional[callable] = None
     ) -> Tuple[bool, str]:
         """Georeference image using GDAL.
@@ -53,7 +54,8 @@ class Georeferencer:
             target_crs: Target coordinate reference system
             transform_type: 'polynomial_1', 'polynomial_2', 'polynomial_3', 'thin_plate_spline', 'projective'
             resampling: 'nearest', 'bilinear', 'cubic', 'lanczos'
-            compression: 'NONE', 'LZW', 'PACKBITS', 'DEFLATE'
+            compression: 'NONE', 'LZW', 'PACKBITS', 'DEFLATE' (default: DEFLATE)
+            cloud_optimized: If True, output as Cloud Optimized GeoTIFF (COG)
 
         Returns:
             Tuple of (success, message)
@@ -147,7 +149,6 @@ class Georeferencer:
             warp_cmd = [
                 'gdalwarp',
                 '-r', resampling_method,
-                '-co', f'COMPRESS={compression}',
                 '-t_srs', target_crs.authid(),
             ]
 
@@ -156,6 +157,25 @@ class Georeferencer:
                 warp_cmd.extend(['-tps'])  # Thin plate spline
             else:
                 warp_cmd.extend(['-order', str(order)])
+
+            # Configure output format and compression
+            if cloud_optimized:
+                # Output as Cloud Optimized GeoTIFF (COG)
+                # COG format requires GDAL 3.1+ (standard in QGIS 3.16+)
+                warp_cmd.extend(['-of', 'COG'])
+                warp_cmd.extend(['-co', f'COMPRESS={compression}'])
+                # COG-specific options for optimal streaming performance
+                warp_cmd.extend(['-co', 'OVERVIEWS=IGNORE_EXISTING'])
+                warp_cmd.extend(['-co', 'OVERVIEW_RESAMPLING=CUBIC'])
+                warp_cmd.extend(['-co', 'BIGTIFF=IF_SAFER'])
+            else:
+                # Standard GeoTIFF with tiling for better performance
+                warp_cmd.extend(['-of', 'GTiff'])
+                warp_cmd.extend(['-co', f'COMPRESS={compression}'])
+                warp_cmd.extend(['-co', 'TILED=YES'])
+                warp_cmd.extend(['-co', 'BLOCKXSIZE=512'])
+                warp_cmd.extend(['-co', 'BLOCKYSIZE=512'])
+                warp_cmd.extend(['-co', 'BIGTIFF=IF_SAFER'])
 
             # Add input VRT and output
             warp_cmd.extend([str(temp_vrt_path), str(output_path)])
@@ -169,6 +189,8 @@ class Georeferencer:
             print(f"Command: {' '.join(warp_cmd[:10])}...")
             print(f"Transform type: {transform_type} (order={order})")
             print(f"Resampling: {resampling_method}")
+            print(f"Output format: {'Cloud Optimized GeoTIFF (COG)' if cloud_optimized else 'GeoTIFF'}")
+            print(f"Compression: {compression}")
             print(f"Source VRT: {temp_vrt_path}")
             print(f"Output: {output_path}")
             print(f"CRS: {target_crs.authid()}")

@@ -99,7 +99,8 @@ class BatchConfig:
     # Georeferencing settings
     transform_type: str = "auto"
     resampling: str = "cubic"
-    compression: str = "LZW"
+    compression: str = "DEFLATE"
+    cloud_optimized: bool = True  # Output as Cloud Optimized GeoTIFF (COG)
     target_crs: str = "EPSG:3857"
 
     # Processing settings
@@ -608,6 +609,7 @@ class BatchProcessor:
                     transform_type=transform_type,
                     resampling=config.resampling,
                     compression=config.compression,
+                    cloud_optimized=config.cloud_optimized,
                     progress_callback=None  # Don't use nested progress
                 )
             finally:

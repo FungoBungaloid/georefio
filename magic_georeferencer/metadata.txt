@@ -2,7 +2,7 @@
 name=Magic Georeferencer
 qgisMinimumVersion=3.22
 description=AI-powered automatic image georeferencing using MatchAnything deep learning model
-version=1.0.0
+version=1.1.0
 author=Magic Georeferencer Team
 email=contact@example.com
 
@@ -14,6 +14,11 @@ about=Automatically georeference maps, aerial photos, and sketches using the Mat
     - Progressive multi-scale refinement for improved accuracy
     - GPU acceleration with automatic CPU fallback
     - Confidence-based match filtering
+    - Cloud Optimized GeoTIFF (COG) output with DEFLATE compression
+    - Exportable control points (.points files) for manual refinement
+    .
+    For batch processing of multiple images with Vision AI location estimation,
+    see the separate "Bulk Georeferencer" plugin.
     .
     Requirements:
     - QGIS 3.22 or higher (Windows, macOS, Linux)
@@ -45,6 +50,12 @@ experimental=True
 deprecated=False
 
 changelog=
+    1.1.0 - Feature update
+        - Cloud Optimized GeoTIFF (COG) output with DEFLATE compression
+        - Control point export (.points files) for manual refinement
+        - GCP export buttons in confidence viewer and success dialog
+        - Improved georeferencing quality
+    .
     1.0.0 - Initial release
         - AI-powered automatic georeferencing
         - MatchAnything EfficientLoFTR model integration

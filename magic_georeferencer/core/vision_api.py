@@ -201,6 +201,9 @@ VISION_SYSTEM_PROMPT = (
     "visible street labels and distinctive river bend')."
 )
 
+# Alias for external access
+DEFAULT_SYSTEM_PROMPT = VISION_SYSTEM_PROMPT
+
 
 class VisionAPIClient:
     """Client for vision API calls to estimate geographic bounding boxes."""

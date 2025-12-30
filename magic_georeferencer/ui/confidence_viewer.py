@@ -10,9 +10,11 @@ TODO: Implement full confidence viewer with:
 - Quality metrics display
 """
 
+from pathlib import Path
+
 from qgis.PyQt.QtWidgets import (
     QDialog, QLabel, QVBoxLayout, QHBoxLayout,
-    QPushButton, QDialogButtonBox
+    QPushButton, QDialogButtonBox, QFileDialog, QMessageBox
 )
 from qgis.PyQt.QtCore import Qt
 
@@ -20,16 +22,20 @@ from qgis.PyQt.QtCore import Qt
 class ConfidenceViewer(QDialog):
     """Visualize match results (placeholder implementation)"""
 
-    def __init__(self, match_result, parent=None):
+    def __init__(self, match_result, gcps=None, gcp_generator=None, parent=None):
         """Initialize confidence viewer.
 
         Args:
             match_result: MatchResult object
+            gcps: List of Ground Control Points (optional, for export)
+            gcp_generator: GCPGenerator instance (optional, for export)
             parent: Parent widget
         """
         super().__init__(parent)
 
         self.match_result = match_result
+        self.gcps = gcps
+        self.gcp_generator = gcp_generator
         self.setWindowTitle("Match Results - Review Before Georeferencing")
         self.setMinimumSize(600, 400)
 
@@ -84,6 +90,23 @@ class ConfidenceViewer(QDialog):
         # Spacer
         layout.addStretch()
 
+        # GCP Export section
+        if self.gcps and self.gcp_generator:
+            gcp_layout = QHBoxLayout()
+            gcp_info = QLabel(f"<b>Control Points:</b> {len(self.gcps)} GCPs available for export")
+            gcp_layout.addWidget(gcp_info)
+
+            export_btn = QPushButton("Export GCPs...")
+            export_btn.setToolTip(
+                "Save control points to a .points file for later use or manual editing"
+            )
+            export_btn.clicked.connect(self._export_gcps)
+            gcp_layout.addWidget(export_btn)
+            gcp_layout.addStretch()
+
+            layout.addLayout(gcp_layout)
+            layout.addWidget(QLabel(""))  # Spacer
+
         # Buttons
         button_box = QDialogButtonBox()
 
@@ -102,3 +125,43 @@ class ConfidenceViewer(QDialog):
         layout.addWidget(button_box)
 
         self.setLayout(layout)
+
+    def _export_gcps(self):
+        """Export GCPs to a .points file."""
+        if not self.gcps or not self.gcp_generator:
+            QMessageBox.warning(
+                self,
+                "Export Error",
+                "No control points available to export."
+            )
+            return
+
+        # Get save location
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Control Points",
+            "",
+            "QGIS Points Files (*.points);;All Files (*)"
+        )
+
+        if not filepath:
+            return
+
+        # Ensure .points extension
+        if not filepath.endswith('.points'):
+            filepath += '.points'
+
+        try:
+            self.gcp_generator.export_gcp_file(self.gcps, Path(filepath))
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Successfully exported {len(self.gcps)} control points to:\n{filepath}\n\n"
+                "You can load this file in the QGIS Georeferencer tool for manual editing."
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"Failed to export control points:\n{str(e)}"
+            )
