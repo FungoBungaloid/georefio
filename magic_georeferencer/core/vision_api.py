@@ -7,6 +7,7 @@ images and estimating their geographic location.
 
 import base64
 import json
+import math
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -14,17 +15,15 @@ from pathlib import Path
 from typing import Optional, Tuple, Callable
 import io
 
+from .logging_utils import get_logger
+
+logger = get_logger('vision_api')
+
 try:
     from PIL import Image
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
-
-try:
-    import numpy as np
-    HAS_NUMPY = True
-except ImportError:
-    HAS_NUMPY = False
 
 
 class APIProvider(Enum):
@@ -99,7 +98,11 @@ DEFAULT_BASEMAP = "osm_standard"
 
 @dataclass
 class BoundingBoxEstimate:
-    """Result of geographic bounding box estimation."""
+    """A geographic bounding box estimate for an image.
+
+    Produced by the vision API or by metadata-based location hint providers
+    (see core/location_providers.py).
+    """
     min_lon: float
     min_lat: float
     max_lon: float
@@ -107,6 +110,7 @@ class BoundingBoxEstimate:
     reasoning: str
     recommended_basemap: str = DEFAULT_BASEMAP  # Recommended basemap source key
     confidence: Optional[str] = None  # Optional confidence level from model
+    source: str = 'vision_api'  # Which provider produced this estimate
 
     @property
     def center_lon(self) -> float:
@@ -133,7 +137,6 @@ class BoundingBoxEstimate:
         Approximate extent in meters (using the larger of width/height).
         Uses center latitude if not specified.
         """
-        import math
         lat = at_latitude if at_latitude is not None else self.center_lat
 
         # Approximate meters per degree at given latitude
@@ -242,8 +245,8 @@ class VisionAPIClient:
             raise ImportError("PIL/Pillow is required for image preprocessing")
 
         with Image.open(image_path) as img:
-            # Convert to RGB if necessary (handles RGBA, grayscale, etc.)
-            if img.mode not in ('RGB', 'L'):
+            # Normalize to RGB (handles RGBA, palette, 16-bit TIFF, grayscale, etc.)
+            if img.mode != 'RGB':
                 img = img.convert('RGB')
 
             # Resize if larger than max size
@@ -400,7 +403,7 @@ class VisionAPIClient:
 
         payload = {
             "model": self.model.model_id,
-            "max_tokens": 500,
+            "max_tokens": 1024,
             "system": VISION_SYSTEM_PROMPT,
             "messages": [
                 {
@@ -448,23 +451,7 @@ class VisionAPIClient:
 
     def _parse_response(self, response_text: str) -> BoundingBoxEstimate:
         """Parse the JSON response from the vision model."""
-        # Try to extract JSON from the response
-        # Models sometimes include extra text before/after JSON
-        response_text = response_text.strip()
-
-        # Try direct JSON parse first
-        try:
-            data = json.loads(response_text)
-        except json.JSONDecodeError:
-            # Try to find JSON object in the response
-            json_match = re.search(r'\{[^{}]*"min_lon"[^{}]*\}', response_text, re.DOTALL)
-            if json_match:
-                try:
-                    data = json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    raise ValueError(f"Could not parse JSON from response: {response_text[:500]}")
-            else:
-                raise ValueError(f"No valid JSON found in response: {response_text[:500]}")
+        data = self._extract_json(response_text)
 
         # Validate required fields
         required_fields = ['min_lon', 'min_lat', 'max_lon', 'max_lat']
@@ -476,21 +463,69 @@ class VisionAPIClient:
             except (TypeError, ValueError):
                 raise ValueError(f"Invalid value for {field}: {data[field]}")
 
+        # Normalize: models occasionally swap min/max
+        min_lon, max_lon = sorted((data['min_lon'], data['max_lon']))
+        min_lat, max_lat = sorted((data['min_lat'], data['max_lat']))
+
+        # Clamp to valid coordinate ranges
+        min_lon = max(-180.0, min(180.0, min_lon))
+        max_lon = max(-180.0, min(180.0, max_lon))
+        min_lat = max(-90.0, min(90.0, min_lat))
+        max_lat = max(-90.0, min(90.0, max_lat))
+
         # Parse recommended basemap (with fallback to default)
         recommended_basemap = data.get('recommended_basemap', DEFAULT_BASEMAP)
         if recommended_basemap not in BASEMAP_OPTIONS:
-            # If model returned invalid basemap, use default
+            logger.warning(
+                f"Model returned unknown basemap '{recommended_basemap}'; "
+                f"using {DEFAULT_BASEMAP}"
+            )
             recommended_basemap = DEFAULT_BASEMAP
 
         return BoundingBoxEstimate(
-            min_lon=data['min_lon'],
-            min_lat=data['min_lat'],
-            max_lon=data['max_lon'],
-            max_lat=data['max_lat'],
+            min_lon=min_lon,
+            min_lat=min_lat,
+            max_lon=max_lon,
+            max_lat=max_lat,
             reasoning=data.get('reasoning', 'No reasoning provided'),
             recommended_basemap=recommended_basemap,
             confidence=data.get('confidence')
         )
+
+    @staticmethod
+    def _extract_json(response_text: str) -> dict:
+        """Extract a JSON object from a model response.
+
+        Handles raw JSON, markdown code fences, surrounding prose, and
+        nested braces inside string values (e.g. in the reasoning field).
+        """
+        response_text = response_text.strip()
+
+        # Strip markdown code fences if present
+        fence_match = re.search(r'```(?:json)?\s*(.*?)```', response_text, re.DOTALL)
+        if fence_match:
+            response_text = fence_match.group(1).strip()
+
+        # Try direct parse first
+        try:
+            data = json.loads(response_text)
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+
+        # Scan for balanced JSON objects and return the first one that
+        # parses and contains the expected keys
+        decoder = json.JSONDecoder()
+        for match in re.finditer(r'\{', response_text):
+            try:
+                data, _ = decoder.raw_decode(response_text, match.start())
+            except json.JSONDecodeError:
+                continue
+            if isinstance(data, dict) and 'min_lon' in data:
+                return data
+
+        raise ValueError(f"No valid JSON found in response: {response_text[:500]}")
 
 
 def estimate_batch_cost(

@@ -6,7 +6,11 @@ Handles model weight download, CUDA detection, and model loading using HuggingFa
 
 import json
 from pathlib import Path
-from typing import Callable, Optional, Dict, Tuple
+from typing import Any, Callable, Optional, Dict, Tuple
+
+from .logging_utils import get_logger
+
+logger = get_logger('model_manager')
 
 try:
     import torch
@@ -62,7 +66,7 @@ class ModelManager:
 
         return torch.cuda.is_available()
 
-    def get_device_info(self) -> Dict[str, any]:
+    def get_device_info(self) -> Dict[str, Any]:
         """Get detailed device information.
 
         Returns:
@@ -140,10 +144,9 @@ class ModelManager:
 
             # Download model and processor using transformers
             # This will download to cache_dir automatically
-            print(f"Downloading model from HuggingFace: {self.MODEL_REPO}")
-            print(f"Cache directory: {self.weights_dir}")
+            logger.info(f"Downloading model from HuggingFace: {self.MODEL_REPO} (cache: {self.weights_dir})")
             if is_windows:
-                print("Windows detected: Disabling symlinks for compatibility")
+                logger.info("Windows detected: disabling symlinks for compatibility")
 
             if progress_callback:
                 progress_callback("Downloading model files...", 10, 100)
@@ -156,8 +159,7 @@ class ModelManager:
             AutoImageProcessor.from_pretrained(
                 self.MODEL_REPO,
                 cache_dir=self.weights_dir,
-                local_files_only=False,
-                resume_download=True
+                local_files_only=False
             )
 
             # Download model (larger)
@@ -167,8 +169,7 @@ class ModelManager:
             AutoModel.from_pretrained(
                 self.MODEL_REPO,
                 cache_dir=self.weights_dir,
-                local_files_only=False,
-                resume_download=True
+                local_files_only=False
             )
 
             if progress_callback:
@@ -217,7 +218,7 @@ class ModelManager:
         except Exception as e:
             return False, f"Failed to load model: {str(e)}"
 
-    def get_inference_config(self) -> Dict[str, any]:
+    def get_inference_config(self) -> Dict[str, Any]:
         """Get device-appropriate inference configuration.
 
         Returns:
@@ -253,7 +254,7 @@ class ModelManager:
         """
         return not self.weights_exist()
 
-    def get_weights_info(self) -> Dict[str, any]:
+    def get_weights_info(self) -> Dict[str, Any]:
         """Get information about model weights.
 
         Returns:

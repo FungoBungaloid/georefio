@@ -7,12 +7,12 @@ Guides the user to align their QGIS map view with the source image by:
 """
 
 from pathlib import Path
-from PyQt5.QtWidgets import (
+from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QRadioButton, QButtonGroup, QGroupBox, QMessageBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QPixmap, QImage
+from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtGui import QPixmap, QImage
 from PIL import Image
 import numpy as np
 
@@ -166,7 +166,6 @@ class AlignmentDialog(QDialog):
         self._update_map_info()
 
         # Set up timer for auto-refresh (update every 1 second)
-        from PyQt5.QtCore import QTimer
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self._update_map_info)
         self.refresh_timer.start(1000)  # 1000ms = 1 second
@@ -452,7 +451,7 @@ fetch basemap tiles at the appropriate zoom level(s) for matching.</li>
                 return (center_wgs.y(), center_wgs.x(), extent_meters, self.extent_dimension)
 
             except Exception as e:
-                print(f"Error getting alignment info: {e}")
+                QMessageBox.critical(self, "Error", f"Failed to get alignment info: {e}")
                 return None
 
         return None

@@ -19,14 +19,16 @@ from qgis.PyQt.QtWidgets import (
     QComboBox,
     QCheckBox,
     QGroupBox,
-    QMessageBox,
-    QSizePolicy
+    QMessageBox
 )
 from qgis.PyQt.QtCore import Qt
-from qgis.core import QgsProject, QgsCoordinateReferenceSystem
+from qgis.core import QgsCoordinateReferenceSystem
 
 from ..core import ModelManager, Matcher, TileFetcher, GCPGenerator, Georeferencer
+from ..core.logging_utils import get_logger
 from .progress_dialog import ProgressDialog
+
+logger = get_logger('main_dialog')
 
 
 class MagicGeoreferencerDialog(QDialog):
@@ -391,7 +393,7 @@ class MagicGeoreferencerDialog(QDialog):
                 img = Image.open(self.source_image_path)
                 width, height = img.size
                 self.image_info_label.setText(f"Image size: {width} x {height} px")
-            except:
+            except Exception:
                 self.image_info_label.setText("Image loaded")
 
     def _update_basemap_description(self):
@@ -472,9 +474,10 @@ class MagicGeoreferencerDialog(QDialog):
 
         center_lat, center_lon, extent_meters, extent_dimension = alignment_info
 
-        print(f"\nAlignment info:")
-        print(f"  Center: {center_lat:.6f}, {center_lon:.6f}")
-        print(f"  Extent: {extent_meters:.0f} meters ({extent_dimension})")
+        logger.info(
+            f"Alignment: center ({center_lat:.6f}, {center_lon:.6f}), "
+            f"extent {extent_meters:.0f}m ({extent_dimension})"
+        )
 
         # Create progress dialog
         progress = ProgressDialog(self, "Magic Georeferencer")
@@ -503,14 +506,11 @@ class MagicGeoreferencerDialog(QDialog):
                 new_width = int(original_size[0] / downsample_factor)
                 new_height = int(original_size[1] / downsample_factor)
 
-                print(f"\n{'='*80}")
-                print("LARGE IMAGE DETECTED - Downsampling for matching")
-                print(f"{'='*80}")
-                print(f"Original size: {original_size[0]} x {original_size[1]} px")
-                print(f"Downsample factor: {downsample_factor:.2f}x")
-                print(f"Matching size: {new_width} x {new_height} px")
-                print(f"Note: GCPs will be scaled back to original resolution for georeferencing")
-                print(f"{'='*80}\n")
+                logger.info(
+                    f"Large image ({original_size[0]}x{original_size[1]} px): "
+                    f"downsampling {downsample_factor:.2f}x to {new_width}x{new_height} "
+                    "for matching; GCPs will be scaled back to original resolution"
+                )
 
                 # Downsample using high-quality Lanczos resampling
                 src_image_pil = src_image_pil.resize((new_width, new_height), Image.Resampling.LANCZOS)
@@ -529,7 +529,7 @@ class MagicGeoreferencerDialog(QDialog):
             tile_fetcher = TileFetcher()
             base_zoom = tile_fetcher.calculate_optimal_zoom(extent_meters, target_pixels=832)
 
-            print(f"Calculated base zoom level: {base_zoom}")
+            logger.info(f"Calculated base zoom level: {base_zoom}")
 
             progress.set_progress(15, 100)
 
@@ -699,16 +699,12 @@ class MagicGeoreferencerDialog(QDialog):
             progress.close()
 
             if success:
-                # Get project CRS name for display
-                project_crs = QgsProject.instance().crs()
-                crs_name = project_crs.authid() if project_crs.isValid() else "EPSG:3857"
-
                 QMessageBox.information(
                     self,
                     "Success!",
                     f"Image georeferenced successfully!\n\n"
                     f"Output: {output_path}\n"
-                    f"Output CRS: {crs_name} (project CRS)\n"
+                    f"Output CRS: EPSG:3857 (Web Mercator)\n"
                     f"Matches: {match_result.num_matches()}\n"
                     f"Mean confidence: {match_result.mean_confidence():.2f}\n"
                     f"Transform type: {transform_type}\n\n"

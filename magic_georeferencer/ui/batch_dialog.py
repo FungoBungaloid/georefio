@@ -1,7 +1,9 @@
 """
 Batch Processing Dialog for Magic Georeferencer
 
-Dialog for batch georeferencing using vision AI for location estimation.
+Dialog for batch georeferencing. Image locations come from metadata hints
+(capture-path manifests, world files, EXIF GPS) with vision AI as an
+optional fallback.
 """
 
 import json
@@ -22,6 +24,7 @@ from qgis.PyQt.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QTextEdit,
+    QSpinBox,
     QSplitter,
     QWidget,
     QSizePolicy,
@@ -29,7 +32,6 @@ from qgis.PyQt.QtWidgets import (
     QApplication
 )
 from qgis.PyQt.QtCore import Qt, QSettings, QThread, pyqtSignal
-from qgis.core import QgsCoordinateReferenceSystem
 
 from ..core.vision_api import (
     APIProvider,
@@ -59,6 +61,9 @@ SETTINGS_API_KEY_ANTHROPIC = f"{SETTINGS_PREFIX}/api_key_anthropic"
 SETTINGS_OUTPUT_SUFFIX = f"{SETTINGS_PREFIX}/output_suffix"
 SETTINGS_BASEMAP = f"{SETTINGS_PREFIX}/basemap"
 SETTINGS_QUALITY = f"{SETTINGS_PREFIX}/quality"
+SETTINGS_USE_METADATA = f"{SETTINGS_PREFIX}/use_metadata_hints"
+SETTINGS_USE_VISION = f"{SETTINGS_PREFIX}/use_vision_api"
+SETTINGS_HINT_EXTENT = f"{SETTINGS_PREFIX}/default_hint_extent_m"
 
 
 class BatchProcessingThread(QThread):
@@ -142,6 +147,9 @@ class BatchDialog(QDialog):
         # Input section
         layout.addWidget(self._create_input_group())
 
+        # Location sources section (metadata, manifest, vision fallback)
+        layout.addWidget(self._create_location_group())
+
         # API section
         layout.addWidget(self._create_api_group())
 
@@ -190,6 +198,97 @@ class BatchDialog(QDialog):
 
         group.setLayout(layout)
         return group
+
+    def _create_location_group(self) -> QGroupBox:
+        """Create location source configuration group."""
+        group = QGroupBox("Location Sources")
+        layout = QVBoxLayout()
+
+        info = QLabel(
+            "Each image needs an approximate location before matching. Sources are "
+            "tried in order: capture-path manifest, embedded georeferencing "
+            "(world files / GeoTIFF), EXIF GPS, then optionally the vision AI. "
+            "Images located from metadata cost nothing."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #666; font-style: italic; margin-bottom: 8px;")
+        layout.addWidget(info)
+
+        # Metadata hints checkbox
+        self.metadata_hints_checkbox = QCheckBox(
+            "Use embedded location metadata (EXIF GPS, world files, GeoTIFF tags)"
+        )
+        self.metadata_hints_checkbox.setChecked(True)
+        layout.addWidget(self.metadata_hints_checkbox)
+
+        # Manifest / capture path file
+        manifest_layout = QHBoxLayout()
+        manifest_layout.addWidget(QLabel("Capture path / manifest:"))
+
+        self.manifest_edit = QLineEdit()
+        self.manifest_edit.setReadOnly(True)
+        self.manifest_edit.setPlaceholderText("Optional: CSV, GeoJSON, or GPX file")
+        manifest_layout.addWidget(self.manifest_edit)
+
+        manifest_browse_btn = QPushButton("Browse...")
+        manifest_browse_btn.clicked.connect(self._browse_manifest)
+        manifest_layout.addWidget(manifest_browse_btn)
+
+        manifest_clear_btn = QPushButton("Clear")
+        manifest_clear_btn.clicked.connect(lambda: self.manifest_edit.clear())
+        manifest_layout.addWidget(manifest_clear_btn)
+
+        layout.addLayout(manifest_layout)
+
+        # Default footprint for point hints
+        extent_layout = QHBoxLayout()
+        extent_layout.addWidget(QLabel("Assumed footprint for point locations:"))
+
+        self.hint_extent_spin = QSpinBox()
+        self.hint_extent_spin.setRange(50, 100000)
+        self.hint_extent_spin.setSingleStep(100)
+        self.hint_extent_spin.setValue(1000)
+        self.hint_extent_spin.setSuffix(" m")
+        self.hint_extent_spin.setToolTip(
+            "Ground extent assumed for images located only by a point "
+            "(EXIF GPS or manifest rows without an extent column)"
+        )
+        extent_layout.addWidget(self.hint_extent_spin)
+        extent_layout.addStretch()
+        layout.addLayout(extent_layout)
+
+        # Vision fallback checkbox. Note: the toggle handler is connected
+        # after setChecked so it doesn't fire before the API widgets exist.
+        self.use_vision_checkbox = QCheckBox(
+            "Use vision AI for images without metadata (requires API key)"
+        )
+        self.use_vision_checkbox.setChecked(True)
+        layout.addWidget(self.use_vision_checkbox)
+        self.use_vision_checkbox.stateChanged.connect(self._on_vision_toggle)
+
+        group.setLayout(layout)
+        return group
+
+    def _browse_manifest(self):
+        """Browse for a capture path / manifest file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Capture Path / Manifest File",
+            str(Path.home()),
+            "Manifest files (*.csv *.geojson *.json *.gpx);;All Files (*)"
+        )
+        if file_path:
+            self.manifest_edit.setText(file_path)
+
+    def _on_vision_toggle(self):
+        """Enable/disable the vision API group with the fallback checkbox."""
+        enabled = self.use_vision_checkbox.isChecked()
+        self.provider_combo.setEnabled(enabled)
+        self.model_combo.setEnabled(enabled)
+        self.api_key_edit.setEnabled(enabled)
+        self.show_key_btn.setEnabled(enabled)
+        self.remember_key_checkbox.setEnabled(enabled)
+        self._update_cost_estimate()
 
     def _create_api_group(self) -> QGroupBox:
         """Create API configuration group."""
@@ -481,6 +580,18 @@ class BatchDialog(QDialog):
         if idx >= 0:
             self.quality_combo.setCurrentIndex(idx)
 
+        # Location sources
+        self.metadata_hints_checkbox.setChecked(
+            self.settings.value(SETTINGS_USE_METADATA, True, type=bool)
+        )
+        self.use_vision_checkbox.setChecked(
+            self.settings.value(SETTINGS_USE_VISION, True, type=bool)
+        )
+        self.hint_extent_spin.setValue(
+            self.settings.value(SETTINGS_HINT_EXTENT, 1000, type=int)
+        )
+        self._on_vision_toggle()
+
         # Update model combo and try to restore saved model
         self._update_model_combo()
         if saved_model:
@@ -523,6 +634,11 @@ class BatchDialog(QDialog):
         # Quality
         self.settings.setValue(SETTINGS_QUALITY, self.quality_combo.currentData())
 
+        # Location sources
+        self.settings.setValue(SETTINGS_USE_METADATA, self.metadata_hints_checkbox.isChecked())
+        self.settings.setValue(SETTINGS_USE_VISION, self.use_vision_checkbox.isChecked())
+        self.settings.setValue(SETTINGS_HINT_EXTENT, self.hint_extent_spin.value())
+
     def _on_provider_changed(self):
         """Handle provider selection change."""
         self._update_model_combo()
@@ -549,6 +665,10 @@ class BatchDialog(QDialog):
 
     def _update_cost_estimate(self):
         """Update cost estimate display."""
+        if not self.use_vision_checkbox.isChecked():
+            self.cost_label.setText("Estimated cost: $0.00 (vision AI disabled)")
+            return
+
         if len(self.image_paths) == 0:
             self.cost_label.setText("Estimated cost: $0.00")
             return
@@ -559,7 +679,10 @@ class BatchDialog(QDialog):
 
         try:
             low, high = estimate_batch_cost(len(self.image_paths), model_key)
-            self.cost_label.setText(f"Estimated cost: ${low:.2f} - ${high:.2f}")
+            self.cost_label.setText(
+                f"Estimated cost: ${low:.2f} - ${high:.2f} "
+                "(worst case; images located from metadata are free)"
+            )
         except Exception:
             self.cost_label.setText("Estimated cost: Unknown")
 
@@ -650,8 +773,27 @@ class BatchDialog(QDialog):
         if len(self.image_paths) == 0:
             return False, "Please select images to process"
 
-        if not self.api_key_edit.text().strip():
-            return False, "Please enter your API key"
+        use_vision = self.use_vision_checkbox.isChecked()
+        has_metadata_source = (
+            self.metadata_hints_checkbox.isChecked()
+            or bool(self.manifest_edit.text().strip())
+        )
+
+        if use_vision and not self.api_key_edit.text().strip():
+            return False, (
+                "Please enter your API key, or disable the vision AI fallback "
+                "if your images carry location metadata"
+            )
+
+        if not use_vision and not has_metadata_source:
+            return False, (
+                "No location source configured. Enable metadata hints, select "
+                "a capture-path manifest, or enable the vision AI fallback."
+            )
+
+        manifest_text = self.manifest_edit.text().strip()
+        if manifest_text and not Path(manifest_text).exists():
+            return False, f"Manifest file not found: {manifest_text}"
 
         # Check if model is loaded
         if self.model_manager is None:
@@ -698,10 +840,17 @@ class BatchDialog(QDialog):
         # Determine automatic vs manual mode
         manual_mode = self.manual_control_checkbox.isChecked()
 
+        manifest_text = self.manifest_edit.text().strip()
+
         config = BatchConfig(
             api_provider=provider,
             api_key=self.api_key_edit.text().strip(),
             model_key=model_key,
+            use_vision_api=self.use_vision_checkbox.isChecked(),
+            # Location hint settings
+            use_metadata_hints=self.metadata_hints_checkbox.isChecked(),
+            manifest_path=Path(manifest_text) if manifest_text else None,
+            default_hint_extent_m=float(self.hint_extent_spin.value()),
             output_directory=output_dir,
             output_suffix=self.suffix_edit.text(),
             # Automatic mode settings (inverted from manual_mode)
@@ -784,6 +933,16 @@ class BatchDialog(QDialog):
             f"Skipped: {skipped}"
         )
 
+        # Show which location sources were used
+        location_sources = {}
+        for r in results:
+            if r.location_source:
+                location_sources[r.location_source] = location_sources.get(r.location_source, 0) + 1
+        if location_sources:
+            summary += "\n\nLocation sources:"
+            for source, count in sorted(location_sources.items()):
+                summary += f"\n- {source}: {count}"
+
         if failed > 0:
             summary += "\n\nFailed images:"
             for r in results:
@@ -795,13 +954,24 @@ class BatchDialog(QDialog):
     def _update_ui_for_processing(self, processing: bool):
         """Update UI state for processing."""
         # Disable/enable input controls
-        self.provider_combo.setEnabled(not processing)
-        self.model_combo.setEnabled(not processing)
-        self.api_key_edit.setEnabled(not processing)
-        self.remember_key_checkbox.setEnabled(not processing)
         self.manual_control_checkbox.setEnabled(not processing)
         self.output_dir_edit.setEnabled(not processing)
         self.suffix_edit.setEnabled(not processing)
+        self.metadata_hints_checkbox.setEnabled(not processing)
+        self.manifest_edit.setEnabled(not processing)
+        self.hint_extent_spin.setEnabled(not processing)
+        self.use_vision_checkbox.setEnabled(not processing)
+
+        # API controls: disabled while processing, otherwise follow the
+        # vision fallback checkbox
+        if processing:
+            self.provider_combo.setEnabled(False)
+            self.model_combo.setEnabled(False)
+            self.api_key_edit.setEnabled(False)
+            self.show_key_btn.setEnabled(False)
+            self.remember_key_checkbox.setEnabled(False)
+        else:
+            self._on_vision_toggle()
 
         # Basemap and quality controls depend on manual control state when not processing
         if not processing:
@@ -854,12 +1024,19 @@ class BatchDialog(QDialog):
         QMessageBox.information(
             self,
             "Batch Georeference - Help",
-            "Batch Georeference - AI-Powered Location Estimation\n\n"
+            "Batch Georeference\n\n"
             "This tool processes multiple images automatically by:\n"
-            "1. Using a vision AI to analyze each image and estimate its location\n"
+            "1. Resolving each image's approximate location from (in order):\n"
+            "   - A capture-path manifest file you supply (CSV, GeoJSON, GPX)\n"
+            "   - Existing rough georeferencing (world files, GeoTIFF tags)\n"
+            "   - EXIF GPS coordinates embedded in the image\n"
+            "   - Vision AI analysis (optional fallback, costs money)\n"
             "2. Fetching reference tiles for the estimated area\n"
             "3. Running feature matching to find control points\n"
             "4. Georeferencing the image\n\n"
+            "Manifest files map image filenames to capture positions; GPX tracks\n"
+            "are interpolated using EXIF timestamps. See docs/BULK_GEOREFERENCING.md\n"
+            "in the repository for format details.\n\n"
             "API Keys:\n"
             "- OpenAI: Get your key at platform.openai.com/api-keys\n"
             "- Anthropic: Get your key at console.anthropic.com\n\n"

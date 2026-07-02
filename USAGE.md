@@ -253,12 +253,23 @@ The plugin automatically selects the best transform:
 
 ### Batch Processing
 
-For multiple images:
+For image libraries and surveys, use the dedicated batch tool:
+`Raster > Magic Georeferencer > Batch Georeference`.
 
-1. Georeference one image to establish best settings
-2. Note the successful basemap and quality settings
-3. Process remaining images with same settings
-4. Review each result in confidence viewer
+Each image's approximate location is resolved automatically from (in order):
+
+1. A capture-path / manifest file you supply (CSV, GeoJSON, or GPX flight track)
+2. Existing rough georeferencing (world files, GeoTIFF tags)
+3. EXIF GPS coordinates embedded in the image
+4. Vision AI analysis (optional fallback; requires an OpenAI or Anthropic API key)
+
+If your images carry location metadata, no API key is needed at all. See
+[docs/BULK_GEOREFERENCING.md](docs/BULK_GEOREFERENCING.md) for manifest
+formats and caveats.
+
+For a handful of similar images without metadata, the interactive tool also
+works well: georeference one image to establish the best settings, then
+process the rest with the same basemap and quality settings.
 
 ### Manual Refinement
 

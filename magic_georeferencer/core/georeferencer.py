@@ -2,6 +2,11 @@
 Georeferencer module for Magic Georeferencer
 
 Handles georeferencing using QGIS/GDAL tools.
+
+The primary path uses the GDAL Python bindings (osgeo.gdal), which are always
+bundled with QGIS, so no external executables are required. If the bindings
+are unavailable (e.g. running outside QGIS with a minimal GDAL install), it
+falls back to invoking gdal_translate/gdalwarp on the PATH.
 """
 
 import subprocess
@@ -9,6 +14,10 @@ import tempfile
 import numpy as np
 from pathlib import Path
 from typing import List, Tuple, Optional
+
+from .logging_utils import get_logger
+
+logger = get_logger('georeferencer')
 
 try:
     from qgis.core import (
@@ -20,6 +29,28 @@ try:
     QGIS_AVAILABLE = True
 except ImportError:
     QGIS_AVAILABLE = False
+
+try:
+    from osgeo import gdal
+    GDAL_PYTHON_AVAILABLE = True
+except ImportError:
+    GDAL_PYTHON_AVAILABLE = False
+
+# GDAL warp polynomial order per transform type (-1 = thin plate spline)
+TRANSFORM_ORDER_MAP = {
+    'polynomial_1': 1,
+    'polynomial_2': 2,
+    'polynomial_3': 3,
+    'thin_plate_spline': -1,
+    'projective': 0,
+}
+
+RESAMPLING_MAP = {
+    'nearest': 'near',
+    'bilinear': 'bilinear',
+    'cubic': 'cubic',
+    'lanczos': 'lanczos',
+}
 
 
 class Georeferencer:
@@ -54,69 +85,191 @@ class Georeferencer:
             transform_type: 'polynomial_1', 'polynomial_2', 'polynomial_3', 'thin_plate_spline', 'projective'
             resampling: 'nearest', 'bilinear', 'cubic', 'lanczos'
             compression: 'NONE', 'LZW', 'PACKBITS', 'DEFLATE'
+            progress_callback: Optional callback(status, current, total)
 
         Returns:
             Tuple of (success, message)
         """
+        source_image_path = Path(source_image_path)
+        output_path = Path(output_path)
+
         if not source_image_path.exists():
             return False, f"Source image not found: {source_image_path}"
 
+        if len(gcps) < 3:
+            return False, f"At least 3 GCPs are required (got {len(gcps)})"
+
+        order = TRANSFORM_ORDER_MAP.get(transform_type, 1)
+        resampling_method = RESAMPLING_MAP.get(resampling, 'cubic')
+
         try:
-            # Map transform type to GDAL order
-            transform_order_map = {
-                'polynomial_1': 1,
-                'polynomial_2': 2,
-                'polynomial_3': 3,
-                'thin_plate_spline': -1,  # TPS
-                'projective': 0  # Linear (projective)
+            if GDAL_PYTHON_AVAILABLE:
+                success, message = self._georeference_with_gdal_python(
+                    source_image_path, gcps, output_path, target_crs,
+                    order, resampling_method, compression, progress_callback
+                )
+            else:
+                logger.warning(
+                    "GDAL Python bindings unavailable; falling back to "
+                    "gdal_translate/gdalwarp executables on PATH"
+                )
+                success, message = self._georeference_with_subprocess(
+                    source_image_path, gcps, output_path, target_crs,
+                    order, resampling_method, compression, progress_callback
+                )
+
+            if not success:
+                return False, message
+
+            if not output_path.exists():
+                return False, f"Output file was not created: {output_path}"
+
+            logger.info(f"Georeferencing complete: {output_path}")
+
+            # Load result into QGIS if interface available
+            if self.iface is not None:
+                if progress_callback:
+                    progress_callback("Loading result into QGIS...", 90, 100)
+
+                if self.load_raster(output_path):
+                    logger.info("Georeferenced raster loaded into QGIS")
+                else:
+                    logger.warning("Failed to load raster into QGIS (but file was created)")
+
+            if progress_callback:
+                progress_callback("Complete!", 100, 100)
+
+            return True, "Georeferencing completed successfully"
+
+        except Exception as e:
+            import traceback
+            logger.error(f"Georeferencing exception:\n{traceback.format_exc()}")
+            return False, f"Georeferencing failed: {str(e)}\n\nSee QGIS Python console for details."
+
+    def _gdal_gcps(self, gcps: List) -> List['gdal.GCP']:
+        """Convert plugin GCPs to gdal.GCP objects."""
+        gdal_gcps = []
+        for gcp in gcps:
+            pixel_x, pixel_y, map_x, map_y = self._extract_gcp_coords(gcp)
+            # gdal.GCP(x, y, z, pixel, line)
+            gdal_gcps.append(gdal.GCP(map_x, map_y, 0.0, pixel_x, pixel_y))
+        return gdal_gcps
+
+    def _georeference_with_gdal_python(
+        self,
+        source_image_path: Path,
+        gcps: List,
+        output_path: Path,
+        target_crs,
+        order: int,
+        resampling_method: str,
+        compression: str,
+        progress_callback: Optional[callable]
+    ) -> Tuple[bool, str]:
+        """Georeference using the GDAL Python API (no external executables)."""
+        gdal.UseExceptions()
+
+        srs_wkt = target_crs.toWkt() if hasattr(target_crs, 'toWkt') else str(target_crs)
+        authid = target_crs.authid() if hasattr(target_crs, 'authid') else str(target_crs)
+
+        if progress_callback:
+            progress_callback("Attaching ground control points...", 10, 100)
+
+        logger.info(
+            f"GDAL Python georeferencing: {len(gcps)} GCPs, order={order}, "
+            f"resampling={resampling_method}, CRS={authid}"
+        )
+
+        src_ds = gdal.Open(str(source_image_path))
+        if src_ds is None:
+            return False, f"GDAL could not open source image: {source_image_path}"
+
+        vrt_ds = None
+        try:
+            # Step 1: attach GCPs via an in-memory VRT (equivalent of gdal_translate -gcp)
+            vrt_ds = gdal.Translate(
+                '',
+                src_ds,
+                format='VRT',
+                GCPs=self._gdal_gcps(gcps),
+                outputSRS=srs_wkt
+            )
+            if vrt_ds is None:
+                return False, "gdal.Translate failed to attach GCPs"
+
+            if progress_callback:
+                progress_callback("Warping image (this may take a while)...", 40, 100)
+
+            # Step 2: warp to the final output (equivalent of gdalwarp)
+            warp_options = {
+                'dstSRS': srs_wkt,
+                'resampleAlg': resampling_method,
+                'creationOptions': [f'COMPRESS={compression}'],
+                'format': 'GTiff',
             }
+            if order == -1:
+                warp_options['tps'] = True
+            else:
+                warp_options['polynomialOrder'] = order
 
-            order = transform_order_map.get(transform_type, 1)
+            def _gdal_progress(fraction, message, data):
+                if progress_callback:
+                    # Map warp progress onto the 40-85% range
+                    progress_callback("Warping image...", 40 + int(fraction * 45), 100)
+                return 1  # continue
 
-            # Map resampling method
-            resampling_map = {
-                'nearest': 'near',
-                'bilinear': 'bilinear',
-                'cubic': 'cubic',
-                'lanczos': 'lanczos'
-            }
-            resampling_method = resampling_map.get(resampling, 'cubic')
+            out_ds = gdal.Warp(
+                str(output_path),
+                vrt_ds,
+                callback=_gdal_progress,
+                **warp_options
+            )
+            if out_ds is None:
+                return False, "gdal.Warp failed to produce output"
 
-            # Step 1: Use gdal_translate to add GCPs to the source image
-            # Create a temporary VRT file with GCPs
-            temp_vrt = tempfile.NamedTemporaryFile(mode='w', suffix='.vrt', delete=False)
-            temp_vrt_path = Path(temp_vrt.name)
-            temp_vrt.close()
+            out_ds = None  # flush and close
 
-            # Build gdal_translate command with GCPs
+            return True, "OK"
+
+        except Exception as e:
+            return False, f"GDAL error: {e}"
+        finally:
+            vrt_ds = None
+            src_ds = None
+
+    def _georeference_with_subprocess(
+        self,
+        source_image_path: Path,
+        gcps: List,
+        output_path: Path,
+        target_crs,
+        order: int,
+        resampling_method: str,
+        compression: str,
+        progress_callback: Optional[callable]
+    ) -> Tuple[bool, str]:
+        """Georeference by invoking gdal_translate/gdalwarp on the PATH."""
+        authid = target_crs.authid() if hasattr(target_crs, 'authid') else str(target_crs)
+
+        temp_vrt = tempfile.NamedTemporaryFile(mode='w', suffix='.vrt', delete=False)
+        temp_vrt_path = Path(temp_vrt.name)
+        temp_vrt.close()
+
+        try:
+            # Step 1: gdal_translate to attach GCPs into a VRT
             translate_cmd = ['gdal_translate']
-
-            # Add GCP points
             for gcp in gcps:
                 pixel_x, pixel_y, map_x, map_y = self._extract_gcp_coords(gcp)
                 translate_cmd.extend(['-gcp', str(pixel_x), str(pixel_y), str(map_x), str(map_y)])
-
-            # Add target CRS
-            translate_cmd.extend(['-a_srs', target_crs.authid()])
-
-            # Output as VRT (virtual format, fast)
+            translate_cmd.extend(['-a_srs', authid])
             translate_cmd.extend(['-of', 'VRT'])
-
-            # Add input and output
             translate_cmd.extend([str(source_image_path), str(temp_vrt_path)])
 
             if progress_callback:
-                progress_callback("Step 1/3: Adding GCPs to image...", 10, 100)
+                progress_callback("Attaching ground control points...", 10, 100)
 
-            print("\n" + "="*80)
-            print("STEP 1: Adding GCPs with gdal_translate")
-            print("="*80)
-            print(f"Command: {' '.join(translate_cmd[:10])}...")
-            print(f"GCPs: {len(gcps)}")
-            print(f"Output VRT: {temp_vrt_path}")
-            print("="*80 + "\n")
+            logger.info(f"Running gdal_translate with {len(gcps)} GCPs")
 
-            # Execute gdal_translate
             result1 = subprocess.run(
                 translate_cmd,
                 capture_output=True,
@@ -124,117 +277,57 @@ class Georeferencer:
                 timeout=60
             )
 
-            if progress_callback:
-                progress_callback("Step 1/3: GCPs added successfully", 40, 100)
-
-            print(f"gdal_translate return code: {result1.returncode}")
-            if result1.stdout:
-                print(f"gdal_translate stdout: {result1.stdout}")
-            if result1.stderr:
-                print(f"gdal_translate stderr: {result1.stderr}")
-
             if result1.returncode != 0:
-                if temp_vrt_path.exists():
-                    temp_vrt_path.unlink()
                 error_msg = f"gdal_translate error (return code {result1.returncode}):\n{result1.stderr}"
                 if "not recognized" in result1.stderr or "not found" in result1.stderr:
-                    error_msg += "\n\nNote: gdal_translate may not be in your system PATH. " \
-                                "Please ensure GDAL is installed and accessible from QGIS."
+                    error_msg += ("\n\nNote: gdal_translate may not be in your system PATH. "
+                                  "Please ensure GDAL is installed and accessible from QGIS.")
                 return False, error_msg
 
-            # Step 2: Use gdalwarp to warp the VRT with GCPs to final output
-            # Build gdalwarp command
+            # Step 2: gdalwarp the VRT to the final output
             warp_cmd = [
                 'gdalwarp',
                 '-r', resampling_method,
                 '-co', f'COMPRESS={compression}',
-                '-t_srs', target_crs.authid(),
+                '-t_srs', authid,
             ]
-
-            # Add transformation type
             if order == -1:
-                warp_cmd.extend(['-tps'])  # Thin plate spline
+                warp_cmd.append('-tps')
             else:
                 warp_cmd.extend(['-order', str(order)])
-
-            # Add input VRT and output
             warp_cmd.extend([str(temp_vrt_path), str(output_path)])
 
             if progress_callback:
-                progress_callback("Step 2/3: Warping image (this may take a while)...", 50, 100)
+                progress_callback("Warping image (this may take a while)...", 50, 100)
 
-            print("\n" + "="*80)
-            print("STEP 2: Warping with gdalwarp")
-            print("="*80)
-            print(f"Command: {' '.join(warp_cmd[:10])}...")
-            print(f"Transform type: {transform_type} (order={order})")
-            print(f"Resampling: {resampling_method}")
-            print(f"Source VRT: {temp_vrt_path}")
-            print(f"Output: {output_path}")
-            print(f"CRS: {target_crs.authid()}")
-            print("="*80 + "\n")
+            logger.info(f"Running gdalwarp (order={order}, resampling={resampling_method})")
 
-            # Execute gdalwarp
             result2 = subprocess.run(
                 warp_cmd,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minutes timeout
+                timeout=300  # 5 minutes
             )
-
-            if progress_callback:
-                progress_callback("Step 2/3: Warping complete", 80, 100)
-
-            # Cleanup temp VRT
-            if temp_vrt_path.exists():
-                temp_vrt_path.unlink()
-
-            # Debug: Print result
-            print(f"gdalwarp return code: {result2.returncode}")
-            if result2.stdout:
-                print(f"gdalwarp stdout: {result2.stdout}")
-            if result2.stderr:
-                print(f"gdalwarp stderr: {result2.stderr}")
 
             if result2.returncode != 0:
                 error_msg = f"gdalwarp error (return code {result2.returncode}):\n{result2.stderr}"
                 if "not recognized" in result2.stderr or "not found" in result2.stderr:
-                    error_msg += "\n\nNote: gdalwarp may not be in your system PATH. " \
-                                "Please ensure GDAL is installed and accessible from QGIS."
+                    error_msg += ("\n\nNote: gdalwarp may not be in your system PATH. "
+                                  "Please ensure GDAL is installed and accessible from QGIS.")
                 return False, error_msg
 
-            # Check if output file was created
-            if not output_path.exists():
-                return False, f"Output file was not created: {output_path}"
-
-            print(f"✓ Georeferencing complete, output file created: {output_path}")
-
-            # Load result into QGIS if interface available
-            if self.iface is not None:
-                if progress_callback:
-                    progress_callback("Step 3/3: Loading into QGIS...", 90, 100)
-
-                print(f"Loading georeferenced raster into QGIS...")
-                load_success = self.load_raster(output_path)
-                if load_success:
-                    print(f"✓ Raster loaded successfully into QGIS")
-                else:
-                    print(f"⚠ Failed to load raster into QGIS (but file was created)")
-
-                if progress_callback:
-                    progress_callback("Complete!", 100, 100)
-
-            return True, "Georeferencing completed successfully"
+            return True, "OK"
 
         except subprocess.TimeoutExpired:
             return False, "Georeferencing timed out (> 5 minutes)"
         except FileNotFoundError as e:
-            return False, f"gdalwarp not found. Please ensure GDAL is installed and in your PATH.\n\nError: {str(e)}"
-        except Exception as e:
-            import traceback
-            error_details = traceback.format_exc()
-            print(f"Georeferencing exception:\n{error_details}")
-            return False, f"Georeferencing failed: {str(e)}\n\nSee QGIS Python console for details."
+            return False, (
+                "GDAL executables not found. Please ensure GDAL is installed "
+                f"and in your PATH.\n\nError: {str(e)}"
+            )
+        finally:
+            if temp_vrt_path.exists():
+                temp_vrt_path.unlink()
 
     def calculate_transform_error(
         self,
@@ -248,13 +341,14 @@ class Georeferencer:
             transform_type: Transform type
 
         Returns:
-            Tuple of (mean_error, per_gcp_errors) in pixels
+            Tuple of (mean_error, per_gcp_errors) in map units
         """
         if len(gcps) < 4:
             return 0.0, []
 
         try:
-            # Extract coordinates
+            import cv2
+
             pixel_coords = []
             map_coords = []
 
@@ -266,16 +360,13 @@ class Georeferencer:
             pixel_coords = np.array(pixel_coords)
             map_coords = np.array(map_coords)
 
-            # Estimate transformation
-            if transform_type == 'polynomial_1' or transform_type == 'projective':
-                # Affine/projective transform
-                import cv2
+            if transform_type in ('polynomial_1', 'projective'):
+                # Fit a single homography and measure residuals
                 H, _ = cv2.findHomography(pixel_coords, map_coords, 0)
 
                 if H is None:
                     return 0.0, []
 
-                # Calculate reprojection errors
                 pixel_coords_homo = np.hstack([pixel_coords, np.ones((len(pixel_coords), 1))])
                 projected = (H @ pixel_coords_homo.T).T
                 projected = projected[:, :2] / projected[:, 2:3]
@@ -283,37 +374,31 @@ class Georeferencer:
                 errors = np.linalg.norm(map_coords - projected, axis=1)
 
             else:
-                # For higher order, use simple leave-one-out cross-validation
+                # For higher order, use leave-one-out cross-validation
                 errors = []
                 for i in range(len(gcps)):
-                    # Leave one out
                     train_idx = [j for j in range(len(gcps)) if j != i]
                     test_pixel = pixel_coords[i]
                     test_map = map_coords[i]
 
-                    # Fit transform on remaining points
-                    import cv2
                     H, _ = cv2.findHomography(pixel_coords[train_idx], map_coords[train_idx], 0)
 
                     if H is None:
                         errors.append(0.0)
                         continue
 
-                    # Predict test point
                     test_pixel_homo = np.array([test_pixel[0], test_pixel[1], 1.0])
                     projected = H @ test_pixel_homo
                     projected = projected[:2] / projected[2]
 
-                    error = np.linalg.norm(test_map - projected)
-                    errors.append(error)
+                    errors.append(np.linalg.norm(test_map - projected))
 
                 errors = np.array(errors)
 
-            mean_error = float(np.mean(errors))
-            return mean_error, errors.tolist()
+            return float(np.mean(errors)), errors.tolist()
 
         except Exception as e:
-            print(f"Error calculating transform error: {e}")
+            logger.warning(f"Error calculating transform error: {e}")
             return 0.0, []
 
     def suggest_transform_type(
@@ -334,28 +419,18 @@ class Georeferencer:
         - 4-5 GCPs: polynomial_1 (affine)
         - 6-9 GCPs: polynomial_1 or polynomial_2
         - 10+ GCPs: polynomial_2 or thin_plate_spline
-        - Poor distribution: polynomial_1 (more stable)
-        - Good distribution + many GCPs: polynomial_3 or thin_plate_spline
+        - Poor distribution: lower order (more stable)
         """
-        if num_gcps < 4:
-            return 'polynomial_1'  # Default
-
         if num_gcps <= 5:
-            return 'polynomial_1'  # Affine
+            return 'polynomial_1'
 
         if num_gcps <= 9:
-            if distribution_quality < 0.5:
-                return 'polynomial_1'  # More stable
-            else:
-                return 'polynomial_2'
+            return 'polynomial_1' if distribution_quality < 0.5 else 'polynomial_2'
 
         # 10+ GCPs
-        if distribution_quality < 0.5:
+        if distribution_quality < 0.7:
             return 'polynomial_2'
-        elif distribution_quality < 0.7:
-            return 'polynomial_2'
-        else:
-            return 'thin_plate_spline'  # Most flexible
+        return 'thin_plate_spline'
 
     def load_raster(self, raster_path: Path) -> bool:
         """Load georeferenced raster into QGIS.
@@ -370,7 +445,6 @@ class Georeferencer:
             return False
 
         try:
-            # Create raster layer
             file_info = QFileInfo(str(raster_path))
             layer_name = file_info.baseName()
 
@@ -379,7 +453,6 @@ class Georeferencer:
             if not raster_layer.isValid():
                 return False
 
-            # Add to project
             QgsProject.instance().addMapLayer(raster_layer)
 
             # Zoom to layer
@@ -390,41 +463,23 @@ class Georeferencer:
             return True
 
         except Exception as e:
-            print(f"Error loading raster: {e}")
+            logger.warning(f"Error loading raster: {e}")
             return False
-
-    def _write_gcp_file(self, gcps: List, file_handle, crs: QgsCoordinateReferenceSystem):
-        """Write GCPs to file in QGIS .points format.
-
-        Args:
-            gcps: List of GCPs
-            file_handle: File handle to write to
-            crs: Coordinate reference system
-        """
-        # Write header
-        file_handle.write("mapX,mapY,pixelX,pixelY,enable,dX,dY,residual\n")
-
-        # Write GCPs
-        for gcp in gcps:
-            pixel_x, pixel_y, map_x, map_y = self._extract_gcp_coords(gcp)
-            file_handle.write(f"{map_x},{map_y},{pixel_x},{pixel_y},1,0,0,0\n")
 
     def _extract_gcp_coords(self, gcp) -> Tuple[float, float, float, float]:
         """Extract coordinates from GCP object.
 
         Args:
-            gcp: GCP object (various formats supported)
+            gcp: GCP object (QGIS GCP or dict format)
 
         Returns:
             Tuple of (pixel_x, pixel_y, map_x, map_y)
         """
-        # Try QGIS GCP object
         if hasattr(gcp, 'sourcePoint') and hasattr(gcp, 'mapPoint'):
             pixel_x = gcp.sourcePoint().x()
             pixel_y = gcp.sourcePoint().y()
             map_x = gcp.mapPoint().x()
             map_y = gcp.mapPoint().y()
-        # Try dict format
         elif isinstance(gcp, dict):
             pixel_x, pixel_y = gcp['pixelPoint']
             map_x, map_y = gcp['mapPoint']

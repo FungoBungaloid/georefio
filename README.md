@@ -14,6 +14,10 @@ Magic Georeferencer is a QGIS plugin that leverages the MatchAnything deep learn
 - **GPU Acceleration** - CUDA support with automatic CPU fallback
 - **Confidence Visualization** - Review matches before committing
 - **Flexible Basemap Sources** - OSM standard, aerial imagery, and more
+- **Batch Georeferencing** - Process whole surveys at once. Per-image locations
+  come from capture-path manifests (CSV/GeoJSON/GPX flight tracks), existing
+  rough georeferencing (world files, GeoTIFF tags), EXIF GPS, or an optional
+  vision AI fallback. See [docs/BULK_GEOREFERENCING.md](docs/BULK_GEOREFERENCING.md)
 
 ## Quick Start
 
@@ -70,7 +74,16 @@ If the plugin is not yet available in the repository, or you need a development 
    - Click "Match & Generate GCPs"
    - Review matches in the confidence viewer
    - Accept to georeference the image
-   - Output will be in your project's CRS
+   - Output is written as a GeoTIFF in EPSG:3857 (Web Mercator)
+
+### Batch Usage
+
+For image libraries and surveys, use `Raster > Magic Georeferencer > Batch
+Georeference`. If your images carry location metadata (EXIF GPS, world files,
+GeoTIFF tags) or you have a flight/capture path file, the whole batch can be
+processed without any API key. Otherwise a vision AI (OpenAI or Anthropic)
+can estimate each image's location as a paid fallback. Full details, manifest
+formats, and caveats: [docs/BULK_GEOREFERENCING.md](docs/BULK_GEOREFERENCING.md).
 
 ## Requirements
 

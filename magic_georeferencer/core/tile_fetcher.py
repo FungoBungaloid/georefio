@@ -4,6 +4,8 @@ Tile Fetcher module for Magic Georeferencer
 Handles basemap tile capture from QGIS canvas and external tile sources.
 """
 
+from __future__ import annotations
+
 import json
 import math
 import numpy as np
@@ -14,6 +16,10 @@ from io import BytesIO
 from PIL import Image
 from datetime import datetime, timedelta
 import time
+
+from .logging_utils import get_logger
+
+logger = get_logger('tile_fetcher')
 
 try:
     from qgis.core import (
@@ -81,14 +87,14 @@ class TileFetcher:
                 cache_file.unlink()
             for cache_file in self.cache_dir.glob(pattern.replace('.png', '.meta')):
                 cache_file.unlink()
-            print(f"Cleared cache for {source_name}")
+            logger.info(f"Cleared tile cache for {source_name}")
         else:
             # Clear all cache
             for cache_file in self.cache_dir.glob("*.png"):
                 cache_file.unlink()
             for cache_file in self.cache_dir.glob("*.meta"):
                 cache_file.unlink()
-            print("Cleared all tile cache")
+            logger.info("Cleared all tile cache")
 
     def capture_canvas(
         self,
@@ -197,7 +203,7 @@ class TileFetcher:
         if not layer.isValid():
             raise RuntimeError(f"Failed to create XYZ tile layer for {source_name}")
 
-        print(f"✓ Created QGIS XYZ tile layer: {source['name']}")
+        logger.debug(f"Created QGIS XYZ tile layer: {source['name']}")
 
         # Calculate target image size maintaining aspect ratio
         extent_width = extent.width()
@@ -228,7 +234,7 @@ class TileFetcher:
         image.fill(QColor(255, 255, 255))  # White background
 
         # Render map
-        print(f"  Rendering {target_width}x{target_height} image...")
+        logger.debug(f"Rendering {target_width}x{target_height} basemap image...")
         painter = QPainter(image)
         job = QgsMapRendererCustomPainterJob(settings, painter)
         job.start()
@@ -238,12 +244,13 @@ class TileFetcher:
         # Convert QImage to numpy array
         image_array = self._qimage_to_numpy(image)
 
-        print(f"✓ Rendered image: {image_array.shape}, range: [{image_array.min()}, {image_array.max()}]")
-
         # Check if we got a valid image (not mostly white/empty)
         mean_brightness = np.mean(image_array)
         if mean_brightness > 250:
-            print(f"⚠ WARNING: Rendered image is mostly white (mean={mean_brightness:.1f}), tiles may not have loaded")
+            logger.warning(
+                f"Rendered basemap is mostly white (mean brightness {mean_brightness:.1f}); "
+                "tiles may not have loaded"
+            )
 
         return image_array, extent
 
@@ -312,18 +319,17 @@ class TileFetcher:
             center_3857.y() + half_height
         )
 
-        print(f"Fetching tiles for:")
-        print(f"  Center: {center_lat:.6f}, {center_lon:.6f}")
-        print(f"  Extent: {width_meters:.0f}m × {height_meters:.0f}m")
-        print(f"  Zoom: {zoom_level}")
-        print(f"  Aspect ratio: {source_aspect_ratio:.3f}")
+        logger.debug(
+            f"Fetching tiles: center ({center_lat:.6f}, {center_lon:.6f}), "
+            f"extent {width_meters:.0f}m x {height_meters:.0f}m, zoom {zoom_level}, "
+            f"aspect {source_aspect_ratio:.3f}"
+        )
 
-        # Choose rendering method
+        # QGIS's built-in XYZ rendering handles OSM headers/caching correctly;
+        # direct fetching may be blocked by the OSM tile policy.
         if use_qgis_rendering:
-            print(f"  Using QGIS built-in XYZ tile rendering (recommended for OSM)")
             return self.render_tiles_with_qgis(extent, web_mercator, source_name, target_size)
         else:
-            print(f"  Using direct tile fetching (may be blocked by OSM)")
             return self.fetch_tiles(extent, web_mercator, source_name, zoom_level, target_size)
 
     def fetch_tiles(
@@ -368,7 +374,7 @@ class TileFetcher:
         # Fetch tiles
         tiles = []
         for x, y in tile_coords:
-            tile_img = self._fetch_single_tile(source, x, y, zoom_level)
+            tile_img = self._fetch_single_tile(source_name, x, y, zoom_level)
             if tile_img is not None:
                 tiles.append((x, y, tile_img))
 
@@ -491,7 +497,7 @@ class TileFetcher:
 
     def _fetch_single_tile(
         self,
-        source: dict,
+        source_name: str,
         x: int,
         y: int,
         z: int
@@ -499,7 +505,7 @@ class TileFetcher:
         """Fetch a single tile.
 
         Args:
-            source: Tile source configuration
+            source_name: Tile source key from tile_sources.json
             x: Tile X coordinate
             y: Tile Y coordinate
             z: Zoom level
@@ -507,6 +513,8 @@ class TileFetcher:
         Returns:
             Tile image as numpy array or None if failed
         """
+        source = self.tile_sources[source_name]
+
         # Check cache first
         cache_file = self.cache_dir / f"{source['name']}_{z}_{x}_{y}.png"
         cache_meta_file = self.cache_dir / f"{source['name']}_{z}_{x}_{y}.meta"
@@ -521,19 +529,17 @@ class TileFetcher:
                     img = Image.open(cache_file)
                     img_array = np.array(img)
 
-                    # Detect OSM "access blocked" tiles
-                    # These are typically black images with white text
-                    # Check if image is mostly dark (likely blocked tile)
+                    # Detect OSM "access blocked" tiles (black with white text);
+                    # re-fetch instead of serving them from cache
                     if self._is_blocked_tile(img_array):
-                        print(f"Detected blocked tile in cache: {cache_file.name}, re-fetching...")
-                        # Delete the cached blocked tile
+                        logger.info(f"Detected blocked tile in cache: {cache_file.name}, re-fetching")
                         cache_file.unlink()
                         if cache_meta_file.exists():
                             cache_meta_file.unlink()
                     else:
                         # Cache is valid and not blocked
                         return img_array
-                except:
+                except Exception:
                     pass
 
         # Prepare headers for conditional request if we have cached metadata
@@ -546,13 +552,10 @@ class TileFetcher:
                         headers['If-None-Match'] = meta['etag']
                     if 'last-modified' in meta:
                         headers['If-Modified-Since'] = meta['last-modified']
-            except:
+            except Exception:
                 pass
 
-        # Fetch from URL
-        url = self.get_tile_url(list(self.tile_sources.keys())[
-            list(self.tile_sources.values()).index(source)
-        ], x, y, z)
+        url = self.get_tile_url(source_name, x, y, z)
 
         try:
             # Rate limiting (especially important for OSM)
@@ -573,7 +576,7 @@ class TileFetcher:
                         cache_file.touch()
                         img = Image.open(cache_file)
                         return np.array(img)
-                    except:
+                    except Exception:
                         pass
 
             response.raise_for_status()
@@ -595,19 +598,19 @@ class TileFetcher:
                     with open(cache_meta_file, 'w') as f:
                         json.dump(meta, f)
             except Exception as e:
-                print(f"Failed to cache tile: {e}")
+                logger.warning(f"Failed to cache tile: {e}")
 
             return img_array
 
         except Exception as e:
-            print(f"Failed to fetch tile {x},{y},{z}: {e}")
+            logger.warning(f"Failed to fetch tile {x},{y},{z}: {e}")
             # If fetch failed but we have a stale cache, use it anyway
             if cache_file.exists():
                 try:
-                    print(f"Using stale cache for tile {x},{y},{z}")
+                    logger.info(f"Using stale cache for tile {x},{y},{z}")
                     img = Image.open(cache_file)
                     return np.array(img)
-                except:
+                except Exception:
                     pass
             return None
 
@@ -672,10 +675,10 @@ class TileFetcher:
                     tile_rgb = np.repeat(tile_img, 3, axis=2)
                 else:
                     # Unknown format - skip this tile
-                    print(f"Warning: Unexpected tile format with {tile_img.shape[2]} channels, skipping")
+                    logger.warning(f"Unexpected tile format with {tile_img.shape[2]} channels, skipping")
                     continue
             else:
-                print(f"Warning: Unexpected tile shape {tile_img.shape}, skipping")
+                logger.warning(f"Unexpected tile shape {tile_img.shape}, skipping")
                 continue
 
             output_image[y_start:y_start+h, x_start:x_start+w] = tile_rgb
@@ -765,12 +768,12 @@ class TileFetcher:
             is_blocked = mean_brightness < 30 and std_brightness > 20
 
             if is_blocked:
-                print(f"  Blocked tile detected: mean_brightness={mean_brightness:.1f}, std={std_brightness:.1f}")
+                logger.debug(f"Blocked tile detected: mean_brightness={mean_brightness:.1f}, std={std_brightness:.1f}")
 
             return is_blocked
 
         except Exception as e:
-            print(f"  Error checking for blocked tile: {e}")
+            logger.warning(f"Error checking for blocked tile: {e}")
             return False
 
     def _resize_image(self, image: np.ndarray, target_size: int) -> np.ndarray:

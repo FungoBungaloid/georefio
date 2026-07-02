@@ -4,10 +4,15 @@ GCP Generator module for Magic Georeferencer
 Converts match results to QGIS Ground Control Points.
 """
 
+from __future__ import annotations
+
 import numpy as np
 from pathlib import Path
 from typing import List, Tuple
 from .matcher import MatchResult
+from .logging_utils import get_logger
+
+logger = get_logger('gcp_generator')
 
 try:
     from qgis.core import (
@@ -76,16 +81,11 @@ class GCPGenerator:
         ref_width, ref_height = ref_image_size
         src_width, src_height = src_image_size
 
-        # Debug output for large image handling
         if downsample_factor > 1.0:
-            print(f"\n{'='*80}")
-            print("GCP COORDINATE SCALING")
-            print(f"{'='*80}")
-            print(f"Downsample factor: {downsample_factor:.2f}x")
-            print(f"Match coordinates are in downsampled space")
-            print(f"GCP coordinates will be scaled to original image space:")
-            print(f"  Original image size: {src_width} x {src_height} px")
-            print(f"{'='*80}\n")
+            logger.info(
+                f"Scaling GCP coordinates by {downsample_factor:.2f}x back to "
+                f"original image space ({src_width} x {src_height} px)"
+            )
 
         # Iterate through matches
         for i in range(match_result.num_matches()):
@@ -136,7 +136,7 @@ class GCPGenerator:
         )
 
         if not is_valid:
-            print(f"Warning: GCP distribution validation: {message}")
+            logger.warning(f"GCP distribution validation: {message}")
 
         return gcps
 
@@ -234,15 +234,12 @@ class GCPGenerator:
         if empty_quadrants > 1:
             return True, f"Warning: {empty_quadrants} quadrants have no GCPs (may affect accuracy)"
 
-        # Check for excessive clustering
-        # Calculate pairwise distances
-        from scipy.spatial.distance import pdist
-
+        # Check for excessive clustering via pairwise distances
         if len(pixel_coords) >= 2:
             try:
+                from scipy.spatial.distance import pdist
                 distances = pdist(pixel_coords)
                 min_distance = np.min(distances)
-                max_distance = np.max(distances)
 
                 # Check if points are too clustered
                 image_diagonal = np.sqrt(image_width**2 + image_height**2)
@@ -251,7 +248,7 @@ class GCPGenerator:
                 if min_distance < clustering_threshold:
                     return True, "Warning: Some GCPs are very close together (clustering detected)"
 
-            except:
+            except ImportError:
                 # scipy not available, skip clustering check
                 pass
 

@@ -2,7 +2,7 @@
 name=Magic Georeferencer
 qgisMinimumVersion=3.22
 description=AI-powered automatic image georeferencing using MatchAnything deep learning model
-version=1.0.0
+version=1.1.0
 author=Magic Georeferencer Team
 email=contact@example.com
 
@@ -45,6 +45,15 @@ experimental=True
 deprecated=False
 
 changelog=
+    1.1.0 - Robustness and bulk georeferencing
+        - Batch location hints from capture-path manifests (CSV/GeoJSON/GPX),
+          world files, GeoTIFF tags, and EXIF GPS; vision AI is now an
+          optional fallback instead of a requirement
+        - Georeferencing uses bundled GDAL Python bindings (no PATH setup)
+        - Matching searches around the extent estimate instead of re-rendering
+          identical tiles; quality backoff no longer re-runs model inference
+        - Uses the transformers keypoint post-processing API when available
+        - Structured logging to the QGIS message log; many small fixes
     1.0.0 - Initial release
         - AI-powered automatic georeferencing
         - MatchAnything EfficientLoFTR model integration
