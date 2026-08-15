@@ -156,8 +156,7 @@ class ModelManager:
             AutoImageProcessor.from_pretrained(
                 self.MODEL_REPO,
                 cache_dir=self.weights_dir,
-                local_files_only=False,
-                resume_download=True
+                local_files_only=False
             )
 
             # Download model (larger)
@@ -167,8 +166,7 @@ class ModelManager:
             AutoModel.from_pretrained(
                 self.MODEL_REPO,
                 cache_dir=self.weights_dir,
-                local_files_only=False,
-                resume_download=True
+                local_files_only=False
             )
 
             if progress_callback:
